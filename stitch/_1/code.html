@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline": "#747779",
+              "tertiary-dim": "#5c4f00",
+              "primary-fixed": "#6e9fff",
+              "on-tertiary-fixed-variant": "#685900",
+              "error": "#b31b25",
+              "on-tertiary-container": "#5d5000",
+              "surface-container-lowest": "#ffffff",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed-dim": "#5391ff",
+              "on-tertiary-fixed": "#483d00",
+              "surface-bright": "#f5f7f9",
+              "on-surface": "#2c2f31",
+              "inverse-on-surface": "#9a9d9f",
+              "secondary-fixed": "#ffc2c7",
+              "on-secondary-container": "#891a33",
+              "inverse-surface": "#0b0f10",
+              "on-tertiary": "#fff3c5",
+              "primary-dim": "#004ca6",
+              "secondary-fixed-dim": "#ffaeb6",
+              "surface-dim": "#d0d5d8",
+              "on-secondary": "#ffefef",
+              "error-container": "#fb5151",
+              "on-secondary-fixed-variant": "#96243c",
+              "tertiary-container": "#fcdf46",
+              "on-primary-fixed": "#000000",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed-dim": "#edd139",
+              "tertiary": "#6a5b00",
+              "surface-variant": "#d9dde0",
+              "on-primary-container": "#002150",
+              "tertiary-fixed": "#fcdf46",
+              "surface-container-highest": "#d9dde0",
+              "secondary": "#a53046",
+              "on-primary-fixed-variant": "#002a62",
+              "secondary-container": "#ffc2c7",
+              "error-dim": "#9f0519",
+              "primary-container": "#6e9fff",
+              "surface-tint": "#0057bd",
+              "secondary-dim": "#95233b",
+              "primary": "#0057bd",
+              "on-error-container": "#570008",
+              "inverse-primary": "#4d8eff",
+              "surface-container-high": "#dfe3e6",
+              "on-error": "#ffefee",
+              "background": "#f5f7f9",
+              "surface-container": "#e5e9eb",
+              "on-secondary-fixed": "#6e0022",
+              "on-background": "#2c2f31",
+              "surface-container-low": "#eef1f3",
+              "surface": "#f5f7f9",
+              "on-primary": "#f0f2ff"
+            },
+            fontFamily: {
+              "headline": ["Plus Jakarta Sans"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      body { font-family: 'Plus Jakarta Sans', sans-serif; }
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-blur {
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+      .bento-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1.5rem;
+      }
+      .dashed-path {
+        background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='48' ry='48' stroke='%230057bdFF' stroke-width='4' stroke-dasharray='12%2c 16' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+        border-radius: 3rem;
+      }
+    </style>
+</head>
+<body class="bg-background text-on-surface overflow-hidden">
+<!-- TopNavBar -->
+<nav class="flex justify-between items-center px-6 w-full fixed top-0 z-50 bg-[#f5f7f9] dark:bg-gray-950 h-16">
+<div class="flex items-center gap-8">
+<span class="text-2xl font-black text-[#0057bd] dark:text-blue-500 tracking-tight">Geumgojigi</span>
+<div class="hidden md:flex gap-6 items-center">
+<a class="font-plus-jakarta-sans text-sm font-bold text-[#0057bd] dark:text-blue-400 border-b-2 border-[#0057bd] pb-1" href="#">Dashboard</a>
+<a class="font-plus-jakarta-sans text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-[#0057bd] transition-colors" href="#">Ledger</a>
+<a class="font-plus-jakarta-sans text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-[#0057bd] transition-colors" href="#">Insights</a>
+<a class="font-plus-jakarta-sans text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-[#0057bd] transition-colors" href="#">Settings</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="bg-surface-container px-4 py-1.5 rounded-full text-[#0057bd] font-bold text-sm">
+                2,500 Credits
+            </div>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all active:scale-95 duration-150">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all active:scale-95 duration-150">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</div>
+</nav>
+<!-- Content (Backgrounded) -->
+<main class="pt-24 px-8 max-w-7xl mx-auto pb-12">
+<header class="mb-12">
+<h1 class="text-4xl font-extrabold tracking-tight mb-2">My Vault</h1>
+<p class="text-on-surface-variant">Your financial future, secured and gamified.</p>
+</header>
+<div class="bento-grid">
+<!-- Hero Balance Card -->
+<div class="col-span-12 md:col-span-8 bg-surface-container-lowest p-10 rounded-lg relative overflow-hidden flex flex-col justify-between min-h-[300px]">
+<div>
+<span class="uppercase text-[0.65rem] font-extrabold tracking-[0.2em] text-on-surface-variant mb-2 block">Available Funds</span>
+<h2 class="text-6xl font-black text-primary">₩1,240,500</h2>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex -space-x-3">
+<img class="w-10 h-10 rounded-full border-4 border-surface-container-lowest" data-alt="close up portrait of a young smiling man in a clean studio setting with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD04l-eOOsWFSUp8ffUpAsLSx2ZCvROibi4eSSJYEiuRRhpe0THj_TVoAcqkYI6viEUU2DUNbtyWGBFLLvWmXr9OaCrfg0qbAHwKU521wZs7rwNrFCz5-Ogu1H99sqLHPGd1ULZcZ9CFysujOGkh3Ji4id4k6iv-wYAAX1q9zNbFu60GGPrVtfWVkqiW5n9WBZqNnk89qZ_zeR2AdlKuqetEWK3v9T-ds7jPdLwKZNwJ_SG-yZq-0tazOyCN8hdxyDdFNuKfq78LWTL"/>
+<img class="w-10 h-10 rounded-full border-4 border-surface-container-lowest" data-alt="professional portrait of a young woman with a friendly expression and bright natural lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSq2dXXPE1v-UdECKvHue3_1w7qOrG-I2EwgzEX2qKctHh-3C0N4zqUkUFdyGktBIOOvSbt4RLLe2ybxLkG_0cg9ZfAs_GCn7s1jJFANduQtyCMKw8POs99cJDy5TO_Jdw7qwHMaQrjDO_VOXG32igl74pLrjt_F1ae5zHj9znaM1bHvKiC-VncOQTKwWr-cuEk4KAvqmTlO9eXmBPKf8SaTXzdKsSKkA8apcsxexaaOPv-w5xElnM4fqVgNUF7k-lmAC7rXa9eMGT"/>
+</div>
+<span class="text-sm font-semibold text-on-surface-variant">+3 friends joined your vault</span>
+</div>
+</div>
+<!-- AI Insight Card -->
+<div class="col-span-12 md:col-span-4 bg-tertiary-container p-8 rounded-lg flex flex-col justify-between">
+<span class="material-symbols-outlined text-4xl text-tertiary" data-icon="bolt">bolt</span>
+<div>
+<h3 class="text-xl font-bold text-on-tertiary-container mb-2">Smart Saving Tip</h3>
+<p class="text-on-tertiary-container/80 text-sm leading-relaxed">You've spent 20% less on gaming this month. Deposit the ₩50,000 difference into your Vault for 2x XP!</p>
+</div>
+<button class="mt-4 bg-tertiary text-on-tertiary py-3 px-6 rounded-full font-bold text-sm w-fit active:scale-95 transition-transform">Apply Now</button>
+</div>
+<!-- Savings Goal -->
+<div class="col-span-12 md:col-span-6 bg-surface-container-low p-8 rounded-lg">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-bold text-lg">New Laptop Goal</h3>
+<span class="text-primary font-black">75%</span>
+</div>
+<div class="h-4 bg-surface-container-highest rounded-full overflow-hidden mb-4">
+<div class="h-full bg-gradient-to-r from-secondary to-secondary-dim w-3/4"></div>
+</div>
+<p class="text-sm text-on-surface-variant">₩900,000 / ₩1,200,000 saved</p>
+</div>
+<!-- Recent Activity -->
+<div class="col-span-12 md:col-span-6 bg-surface-container-low p-8 rounded-lg">
+<h3 class="font-bold text-lg mb-6">Recent Activity</h3>
+<div class="space-y-4">
+<div class="flex items-center justify-between p-3 bg-white/50 rounded-2xl">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="sports_esports">sports_esports</span>
+</div>
+<div>
+<p class="font-bold text-sm">Steam Purchase</p>
+<p class="text-xs text-on-surface-variant">Today, 2:45 PM</p>
+</div>
+</div>
+<span class="font-bold text-secondary">-₩24,000</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- FULL SCREEN UPLOAD OVERLAY (Data Blackhole) -->
+<div class="fixed inset-0 z-[100] glass-blur flex items-center justify-center p-6 md:p-12 bg-[#0057bd]/20 transition-all duration-300">
+<!-- Overlay Background Layer -->
+<div class="absolute inset-0 bg-surface-dim/40 backdrop-blur-md"></div>
+<!-- Main Drop Zone -->
+<div class="relative w-full max-w-5xl h-[819px] flex flex-col items-center justify-center dashed-path bg-white/60 p-12 text-center group">
+<!-- Close Button -->
+<button class="absolute top-8 right-8 w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center hover:bg-surface-container-highest transition-all active:scale-90">
+<span class="material-symbols-outlined text-on-surface" data-icon="close">close</span>
+</button>
+<!-- Animated Cloud/Upload Section -->
+<div class="relative mb-10">
+<div class="absolute inset-0 bg-primary/10 blur-[60px] rounded-full animate-pulse"></div>
+<div class="relative bg-gradient-to-tr from-primary to-primary-container w-32 h-32 md:w-48 md:h-48 rounded-full flex items-center justify-center shadow-2xl shadow-primary/30">
+<span class="material-symbols-outlined text-6xl md:text-8xl text-white" data-icon="cloud_upload">cloud_upload</span>
+</div>
+</div>
+<!-- Text Content -->
+<h2 class="text-3xl md:text-5xl font-black text-on-surface mb-6 tracking-tight">여기에 파일을 놓아 금고에 넣으세요</h2>
+<div class="flex flex-wrap justify-center gap-3 mb-10">
+<div class="px-6 py-2 bg-white rounded-full shadow-sm border border-outline-variant/20 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="picture_as_pdf">picture_as_pdf</span>
+<span class="font-bold text-sm">PDF</span>
+</div>
+<div class="px-6 py-2 bg-white rounded-full shadow-sm border border-outline-variant/20 flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-xl" data-icon="csv">csv</span>
+<span class="font-bold text-sm">CSV</span>
+</div>
+<div class="px-6 py-2 bg-white rounded-full shadow-sm border border-outline-variant/20 flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-xl" data-icon="table_chart">table_chart</span>
+<span class="font-bold text-sm">XLSX</span>
+</div>
+</div>
+<!-- CTA/Manual Trigger -->
+<p class="text-on-surface-variant font-medium mb-4">또는</p>
+<button class="bg-primary text-white py-4 px-10 rounded-full font-bold text-lg shadow-xl shadow-primary/20 hover:scale-105 transition-transform active:scale-95 flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="file_open">file_open</span>
+                내 기기에서 파일 선택
+            </button>
+<!-- Decorative Elements -->
+<div class="absolute bottom-12 left-12 opacity-30 hidden lg:block">
+<span class="material-symbols-outlined text-8xl text-primary/20" data-icon="rocket_launch">rocket_launch</span>
+</div>
+<div class="absolute top-12 left-12 opacity-30 hidden lg:block">
+<span class="material-symbols-outlined text-6xl text-primary/20" data-icon="security">security</span>
+</div>
+</div>
+</div>
+<!-- SideNavBar (Hidden in Overlay State but present for shell integrity) -->
+<aside class="fixed left-0 w-20 flex flex-col items-center py-6 gap-8 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl rounded-r-3xl h-[calc(100vh-4rem)] mt-16 shadow-xl shadow-blue-900/5 z-40">
+<div class="flex flex-col gap-6">
+<button class="w-12 h-12 flex items-center justify-center bg-gradient-to-tr from-[#0057bd] to-[#6e9fff] text-white rounded-2xl shadow-lg transition-transform active:scale-98">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all rounded-2xl">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all rounded-2xl">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all rounded-2xl">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all rounded-2xl">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+</div>
+<div class="mt-auto">
+<button class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary/20">
+<img class="w-full h-full object-cover" data-alt="close up headshot of a person with expressive features and warm background lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSEhgH47uWtU0LiSWXWbY-EoStH3d_4dUkoaeqqst4zJuFaoiOGme19TFyoDuHg2ACOmoJX45tE1wzMz8xHVYlqgMy4f9TZR1UoVHC10GnCvtVSdYWTGRVugnnBY6fROnTsBXUyd4pSaTpto8LPzwwCnpjkOJv3fkTL_NI5AfNDwycEbR8NOZidvDcDSAkj5VQck9zHdMgu2VAKS0XSnBSttc92kjgiyB0xH89dnVAtz1sAmad3HBk0sf7YewwiKmT1i8zVfE6A8Vx"/>
+</button>
+</div>
+</aside>
+</body></html>

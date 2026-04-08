@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline": "#747779",
+              "tertiary-dim": "#5c4f00",
+              "primary-fixed": "#6e9fff",
+              "on-tertiary-fixed-variant": "#685900",
+              "error": "#b31b25",
+              "on-tertiary-container": "#5d5000",
+              "surface-container-lowest": "#ffffff",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed-dim": "#5391ff",
+              "on-tertiary-fixed": "#483d00",
+              "surface-bright": "#f5f7f9",
+              "on-surface": "#2c2f31",
+              "inverse-on-surface": "#9a9d9f",
+              "secondary-fixed": "#ffc2c7",
+              "on-secondary-container": "#891a33",
+              "inverse-surface": "#0b0f10",
+              "on-tertiary": "#fff3c5",
+              "primary-dim": "#004ca6",
+              "secondary-fixed-dim": "#ffaeb6",
+              "surface-dim": "#d0d5d8",
+              "on-secondary": "#ffefef",
+              "error-container": "#fb5151",
+              "on-secondary-fixed-variant": "#96243c",
+              "tertiary-container": "#fcdf46",
+              "on-primary-fixed": "#000000",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed-dim": "#edd139",
+              "tertiary": "#6a5b00",
+              "surface-variant": "#d9dde0",
+              "on-primary-container": "#002150",
+              "tertiary-fixed": "#fcdf46",
+              "surface-container-highest": "#d9dde0",
+              "secondary": "#a53046",
+              "on-primary-fixed-variant": "#002a62",
+              "secondary-container": "#ffc2c7",
+              "error-dim": "#9f0519",
+              "primary-container": "#6e9fff",
+              "surface-tint": "#0057bd",
+              "secondary-dim": "#95233b",
+              "primary": "#0057bd",
+              "on-error-container": "#570008",
+              "inverse-primary": "#4d8eff",
+              "surface-container-high": "#dfe3e6",
+              "on-error": "#ffefee",
+              "background": "#f5f7f9",
+              "surface-container": "#e5e9eb",
+              "on-secondary-fixed": "#6e0022",
+              "on-background": "#2c2f31",
+              "surface-container-low": "#eef1f3",
+              "surface": "#f5f7f9",
+              "on-primary": "#f0f2ff"
+            },
+            fontFamily: {
+              "headline": ["Plus Jakarta Sans"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background text-on-surface antialiased overflow-hidden">
+<!-- Background Dashboard (Blurred) -->
+<div class="fixed inset-0 z-0 flex blur-md saturate-50 pointer-events-none">
+<!-- Sidebar Navigation (JSON Reference) -->
+<aside class="fixed left-0 w-20 flex flex-col items-center py-6 gap-8 bg-white/80 backdrop-blur-xl rounded-r-3xl h-[calc(100vh-4rem)] mt-16 shadow-xl shadow-blue-900/5 z-40">
+<div class="w-12 h-12 bg-surface-container rounded-2xl flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-primary">account_balance_wallet</span>
+</div>
+<nav class="flex flex-col gap-6">
+<div class="bg-gradient-to-tr from-[#0057bd] to-[#6e9fff] text-white rounded-2xl shadow-lg p-3">
+<span class="material-symbols-outlined">home</span>
+</div>
+<div class="text-gray-400 p-3"><span class="material-symbols-outlined">account_balance_wallet</span></div>
+<div class="text-gray-400 p-3"><span class="material-symbols-outlined">receipt_long</span></div>
+<div class="text-gray-400 p-3"><span class="material-symbols-outlined">group</span></div>
+</nav>
+</aside>
+<!-- Main Dashboard Content -->
+<main class="ml-20 w-full pt-20 px-8">
+<header class="flex justify-between items-center mb-10">
+<h1 class="text-4xl font-black text-primary tracking-tight">Dashboard</h1>
+<div class="flex gap-4">
+<div class="bg-surface-container-lowest px-6 py-3 rounded-full shadow-sm font-bold text-primary">2,500 Credits</div>
+</div>
+</header>
+<div class="grid grid-cols-12 gap-6">
+<div class="col-span-8 bg-surface-container-lowest rounded-3xl p-8 h-96 shadow-sm">
+<div class="h-4 w-48 bg-surface-container rounded-full mb-6"></div>
+<div class="flex gap-4">
+<div class="h-64 flex-1 bg-surface-container-low rounded-2xl"></div>
+<div class="h-64 flex-1 bg-surface-container-low rounded-2xl"></div>
+</div>
+</div>
+<div class="col-span-4 bg-surface-container-lowest rounded-3xl p-8 h-96 shadow-sm">
+<div class="h-4 w-32 bg-surface-container rounded-full mb-6"></div>
+<div class="space-y-4">
+<div class="h-12 w-full bg-surface-container-low rounded-xl"></div>
+<div class="h-12 w-full bg-surface-container-low rounded-xl"></div>
+<div class="h-12 w-full bg-surface-container-low rounded-xl"></div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Modal Backdrop -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-6">
+<!-- Toss-style Payment Modal -->
+<div class="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col p-6 relative">
+<!-- Close Icon -->
+<button class="absolute top-6 right-6 text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+<!-- Header -->
+<div class="mb-8">
+<h2 class="text-xl font-bold text-on-surface mb-1">크레딧 충전소</h2>
+<p class="text-sm text-on-surface-variant">원하시는 금액을 선택해 주세요</p>
+</div>
+<!-- Current Balance Display -->
+<div class="bg-surface-container-low rounded-2xl p-5 mb-8 flex justify-between items-center">
+<span class="text-sm font-semibold text-on-surface-variant">현재 잔액</span>
+<div class="flex items-center gap-1">
+<span class="text-lg font-extrabold text-primary">1,250.3 C</span>
+<span class="text-on-surface-variant text-sm font-medium">남음</span>
+</div>
+</div>
+<!-- Options Grid -->
+<div class="space-y-3 mb-10">
+<!-- Option 1 -->
+<button class="w-full flex items-center justify-between p-5 bg-surface-container-lowest border-2 border-surface-container-high rounded-2xl hover:border-primary transition-all group active:scale-[0.98]">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+</div>
+<div class="text-left">
+<div class="text-base font-bold text-on-surface">1,000 C</div>
+<div class="text-xs text-on-surface-variant">1,000원 결제</div>
+</div>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-surface-container-high group-hover:border-primary flex items-center justify-center">
+<div class="w-3 h-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+</div>
+</button>
+<!-- Option 2 (Selected) -->
+<button class="w-full flex items-center justify-between p-5 bg-surface-container-lowest border-2 border-primary rounded-2xl transition-all group active:scale-[0.98] ring-4 ring-primary/5">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">stars</span>
+</div>
+<div class="text-left">
+<div class="flex items-center gap-2">
+<span class="text-base font-bold text-on-surface">5,000 C</span>
+<span class="px-2 py-0.5 bg-secondary text-[10px] text-white font-bold rounded-full">인기</span>
+</div>
+<div class="text-xs text-on-surface-variant">5,000원 결제</div>
+</div>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center">
+<div class="w-3 h-3 rounded-full bg-primary opacity-100"></div>
+</div>
+</button>
+<!-- Option 3 -->
+<button class="w-full flex items-center justify-between p-5 bg-surface-container-lowest border-2 border-surface-container-high rounded-2xl hover:border-primary transition-all group active:scale-[0.98]">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">local_fire_department</span>
+</div>
+<div class="text-left">
+<div class="text-base font-bold text-on-surface">10,000 C</div>
+<div class="text-xs text-on-surface-variant">10,000원 결제</div>
+</div>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-surface-container-high group-hover:border-primary flex items-center justify-center">
+<div class="w-3 h-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+</div>
+</button>
+</div>
+<!-- Footer Action -->
+<button class="w-full bg-gradient-to-tr from-primary to-primary-container py-5 rounded-2xl text-white font-bold text-lg shadow-lg shadow-primary/20 active:scale-[0.97] transition-transform">
+                충전하기
+            </button>
+<p class="mt-4 text-center text-xs text-on-surface-variant font-medium">
+                결제 시 약관에 동의하는 것으로 간주됩니다.
+            </p>
+</div>
+</div>
+<!-- Hidden Top Bar for visual context (JSON Reference) -->
+<header class="fixed top-0 left-0 right-0 h-16 bg-surface-bright flex items-center justify-between px-6 z-[60] blur-sm pointer-events-none">
+<span class="text-2xl font-black text-primary tracking-tight">Geumgojigi</span>
+<div class="flex gap-8">
+<span class="text-sm font-bold text-primary border-b-2 border-primary pb-1">Dashboard</span>
+<span class="text-sm font-medium text-outline">Ledger</span>
+<span class="text-sm font-medium text-outline">Insights</span>
+<span class="text-sm font-medium text-outline">Settings</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-outline">notifications</span>
+<span class="material-symbols-outlined text-outline">account_circle</span>
+</div>
+</header>
+</body></html>

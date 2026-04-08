@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Geumgojigi Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .material-symbols-outlined { font-size: 24px; }
+        .glass-panel { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "secondary-container": "#ffc2c7",
+              "primary": "#0057bd",
+              "surface-bright": "#f5f7f9",
+              "secondary-fixed-dim": "#ffaeb6",
+              "on-error-container": "#570008",
+              "on-secondary-fixed-variant": "#96243c",
+              "surface": "#f5f7f9",
+              "surface-container-high": "#dfe3e6",
+              "on-primary-fixed": "#000000",
+              "on-secondary-fixed": "#6e0022",
+              "surface-container-highest": "#d9dde0",
+              "tertiary": "#6a5b00",
+              "on-tertiary-fixed-variant": "#685900",
+              "surface-container-lowest": "#ffffff",
+              "tertiary-container": "#fcdf46",
+              "primary-fixed": "#6e9fff",
+              "surface-container": "#e5e9eb",
+              "secondary": "#a53046",
+              "on-surface": "#2c2f31",
+              "inverse-primary": "#4d8eff",
+              "inverse-on-surface": "#9a9d9f",
+              "secondary-fixed": "#ffc2c7",
+              "on-primary": "#f0f2ff",
+              "surface-variant": "#d9dde0",
+              "primary-fixed-dim": "#5391ff",
+              "on-tertiary": "#fff3c5",
+              "surface-tint": "#0057bd",
+              "outline": "#747779",
+              "on-tertiary-container": "#5d5000",
+              "background": "#f5f7f9",
+              "surface-dim": "#d0d5d8",
+              "on-tertiary-fixed": "#483d00",
+              "error": "#b31b25",
+              "outline-variant": "#abadaf",
+              "error-dim": "#9f0519",
+              "error-container": "#fb5151",
+              "tertiary-fixed-dim": "#edd139",
+              "tertiary-fixed": "#fcdf46",
+              "surface-container-low": "#eef1f3",
+              "on-secondary": "#ffefef",
+              "on-error": "#ffefee",
+              "primary-dim": "#004ca6",
+              "on-surface-variant": "#595c5e",
+              "on-primary-fixed-variant": "#002a62",
+              "on-secondary-container": "#891a33",
+              "on-primary-container": "#002150",
+              "inverse-surface": "#0b0f10",
+              "primary-container": "#6e9fff",
+              "tertiary-dim": "#5c4f00",
+              "on-background": "#2c2f31",
+              "secondary-dim": "#95233b"
+            },
+            fontFamily: {
+              "headline": ["Plus Jakarta Sans"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-surface text-on-surface min-h-screen">
+<!-- TopAppBar -->
+<header class="bg-[#f5f7f9] docked full-width top-0 z-50 tonal-shift bg-[#eef1f3]">
+<div class="flex justify-between items-center w-full px-6 py-4 max-w-[1440px] mx-auto">
+<div class="flex items-center gap-12">
+<span class="text-2xl font-black text-[#0057bd] tracking-tighter">Geumgojigi</span>
+<nav class="hidden md:flex gap-8 font-['Plus_Jakarta_Sans'] text-sm font-medium tracking-tight">
+<a class="text-[#0057bd] font-bold border-b-2 border-[#0057bd] py-1" href="#">Dashboard</a>
+<a class="text-slate-500 hover:text-[#0057bd] transition-all duration-200 py-1" href="#">Market</a>
+<a class="text-slate-500 hover:text-[#0057bd] transition-all duration-200 py-1" href="#">Community</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-white/50 transition-all scale-95 active:scale-90">
+<span class="material-symbols-outlined text-slate-500">notifications</span>
+</button>
+<div class="flex items-center gap-3 pl-4 border-l border-outline-variant/20">
+<div class="text-right">
+<p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Teen Credit</p>
+<p class="text-sm font-bold text-primary">780 pts</p>
+</div>
+<span class="material-symbols-outlined text-3xl text-slate-400">account_circle</span>
+</div>
+</div>
+</div>
+</header>
+<main class="max-w-[1440px] mx-auto p-6 lg:p-10">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Left Side (65%) -->
+<div class="lg:col-span-8 space-y-8">
+<!-- Summary Section -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Total Balance Card -->
+<div class="bg-surface-container-lowest p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.02)] relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+<p class="text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Total Vault Balance</p>
+<h2 class="text-4xl font-extrabold text-on-surface tracking-tight">₩ 1,240,500</h2>
+<div class="mt-6 flex items-center gap-2">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                                +2.4% this week
+                            </span>
+</div>
+</div>
+<!-- AI Morning Briefing Card -->
+<div class="bg-primary text-on-primary p-8 rounded-lg shadow-lg relative overflow-hidden">
+<div class="absolute bottom-0 right-0 opacity-10">
+<span class="material-symbols-outlined text-8xl" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<p class="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">AI Morning Briefing</p>
+<p class="text-lg font-semibold leading-relaxed">"You've saved ₩15,000 more than last month. Consider moving ₩5k to your high-interest Vault!"</p>
+</div>
+</div>
+<!-- Data Ledger Grid -->
+<section class="bg-surface-container-low p-1 rounded-lg">
+<div class="bg-surface-container-lowest rounded-lg overflow-hidden shadow-sm">
+<div class="px-8 py-6 flex justify-between items-center border-b border-surface-container">
+<h3 class="text-xl font-extrabold tracking-tight">Data Vault Ledger</h3>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">filter_list</span>
+</button>
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">search</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant border-b border-surface-container">
+<th class="px-8 py-4">Status</th>
+<th class="px-4 py-4">Counterparty</th>
+<th class="px-4 py-4">Category</th>
+<th class="px-4 py-4">Method</th>
+<th class="px-8 py-4 text-right">Amount</th>
+</tr>
+</thead>
+<tbody class="text-sm">
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-8 py-5">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</td>
+<td class="px-4 py-5 font-bold">Netflix Subscription</td>
+<td class="px-4 py-5"><span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-[10px] font-bold uppercase">Media</span></td>
+<td class="px-4 py-5 text-on-surface-variant">Auto-pay</td>
+<td class="px-8 py-5 text-right font-bold text-secondary">- ₩ 17,000</td>
+</tr>
+<tr class="bg-primary/5 ring-1 ring-primary/20 transition-colors group cursor-pointer relative">
+<td class="px-8 py-5">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">edit_square</span>
+</td>
+<td class="px-4 py-5 font-bold">Gourmet Burger Kitchen</td>
+<td class="px-4 py-5"><span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-[10px] font-bold uppercase">Food</span></td>
+<td class="px-4 py-5 text-on-surface-variant">Credit Card</td>
+<td class="px-8 py-5 text-right font-bold text-secondary">- ₩ 18,500</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-8 py-5">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</td>
+<td class="px-4 py-5 font-bold">Weekly Allowance</td>
+<td class="px-4 py-5"><span class="px-3 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-bold uppercase">Income</span></td>
+<td class="px-4 py-5 text-on-surface-variant">Bank Transfer</td>
+<td class="px-8 py-5 text-right font-bold text-primary">+ ₩ 50,000</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-8 py-5">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</td>
+<td class="px-4 py-5 font-bold">Steam Games</td>
+<td class="px-4 py-5"><span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-[10px] font-bold uppercase">Gaming</span></td>
+<td class="px-4 py-5 text-on-surface-variant">Credit Card</td>
+<td class="px-8 py-5 text-right font-bold text-secondary">- ₩ 34,200</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Side (35%): Transaction Edit Panel -->
+<aside class="lg:col-span-4 h-fit sticky top-28">
+<div class="bg-surface-container-lowest rounded-lg shadow-[0_12px_40px_rgba(0,0,0,0.06)] overflow-hidden">
+<!-- Header -->
+<div class="px-6 py-6 flex items-center justify-between border-b border-surface-container-low">
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined p-1 hover:bg-surface-container rounded-full text-on-surface-variant">arrow_back</button>
+<h3 class="font-extrabold text-lg tracking-tight">상세 내역 수정</h3>
+</div>
+<button class="material-symbols-outlined p-1 hover:bg-surface-container rounded-full text-on-surface-variant">close</button>
+</div>
+<!-- Content -->
+<div class="p-6 space-y-8">
+<!-- Receipt Image -->
+<div class="w-full aspect-video rounded-lg overflow-hidden relative group cursor-zoom-in">
+<img alt="Transaction Receipt" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Close-up of a delicious gourmet cheeseburger with melting cheese and fresh toppings in a modern restaurant setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAassrBmkRCNm9jH4ssWR5L7JWmUADaH2YwDupj4-oQswlXeirDyHxBoh2U1GR4VifEu79v5hjkgaEwh5tmCbp1nDf4JDZKJosvJP8KAY7PXOdVc-b8IRcTR31rjQ5z3KvF2Vf3F8wCjEttZQ3u67xSGlXIZ-I0Wh5iWwPH7_i464jKbQFYHnnqPOOnUP6luW6XmQbqR0iXpF7TsxgO7oa2AwUUfxNaOfLcKHJojJvgXWHfaicxb1ovnOzvmanTxqw58pOfQFcbWDZt"/>
+<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="bg-white/90 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg">View Receipt</span>
+</div>
+</div>
+<!-- Form -->
+<div class="space-y-5">
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">가맹점 이름</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 font-semibold focus:ring-2 focus:ring-primary/20 transition-all" type="text" value="고메 버거 키친"/>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">거래 날짜</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 font-semibold focus:ring-2 focus:ring-primary/20 transition-all text-sm" type="text" value="2026.03.29"/>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">거래 시간</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 font-semibold focus:ring-2 focus:ring-primary/20 transition-all text-sm" type="text" value="12:10"/>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">결제 금액</label>
+<div class="relative">
+<input class="w-full bg-surface-container-low border-none rounded-xl px-4 py-4 text-right font-extrabold text-2xl text-secondary focus:ring-2 focus:ring-secondary/20 transition-all" type="text" value="₩ 18,500"/>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">카테고리</label>
+<select class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 font-semibold focus:ring-2 focus:ring-primary/20 transition-all text-sm appearance-none"><option selected="">식비</option><option>미디어</option><option>게이밍</option><option>쇼핑</option></select>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">결제 수단</label>
+<select class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 font-semibold focus:ring-2 focus:ring-primary/20 transition-all text-sm appearance-none"><option selected="">식비</option><option>미디어</option><option>게이밍</option><option>쇼핑</option></select>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="pt-4 space-y-3">
+<button class="w-full bg-gradient-to-br from-[#0057bd] to-[#6e9fff] text-white py-4 rounded-full font-bold shadow-[0_8px_20px_rgba(0,87,189,0.3)] hover:scale-[1.02] active:scale-95 transition-all">수정 완료</button>
+<button class="w-full bg-surface-container-high text-error font-bold py-4 rounded-full hover:bg-error/10 active:scale-95 transition-all">내역 삭제하기</button>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-[0_-8px_30px_rgb(0,0,0,0.04)] z-50 rounded-t-lg">
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-[#0057bd] to-[#6e9fff] text-white rounded-2xl px-5 py-2 scale-110" href="#">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[10px] font-bold uppercase tracking-widest mt-1">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 px-5 py-2 hover:text-[#0057bd]" href="#">
+<span class="material-symbols-outlined">insights</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[10px] font-bold uppercase tracking-widest mt-1">Analyze</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 px-5 py-2 hover:text-[#0057bd]" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[10px] font-bold uppercase tracking-widest mt-1">Social</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 px-5 py-2 hover:text-[#0057bd]" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[10px] font-bold uppercase tracking-widest mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

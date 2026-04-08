@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline": "#747779",
+              "tertiary-dim": "#5c4f00",
+              "primary-fixed": "#6e9fff",
+              "on-tertiary-fixed-variant": "#685900",
+              "error": "#b31b25",
+              "on-tertiary-container": "#5d5000",
+              "surface-container-lowest": "#ffffff",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed-dim": "#5391ff",
+              "on-tertiary-fixed": "#483d00",
+              "surface-bright": "#f5f7f9",
+              "on-surface": "#2c2f31",
+              "inverse-on-surface": "#9a9d9f",
+              "secondary-fixed": "#ffc2c7",
+              "on-secondary-container": "#891a33",
+              "inverse-surface": "#0b0f10",
+              "on-tertiary": "#fff3c5",
+              "primary-dim": "#004ca6",
+              "secondary-fixed-dim": "#ffaeb6",
+              "surface-dim": "#d0d5d8",
+              "on-secondary": "#ffefef",
+              "error-container": "#fb5151",
+              "on-secondary-fixed-variant": "#96243c",
+              "tertiary-container": "#fcdf46",
+              "on-primary-fixed": "#000000",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed-dim": "#edd139",
+              "tertiary": "#6a5b00",
+              "surface-variant": "#d9dde0",
+              "on-primary-container": "#002150",
+              "tertiary-fixed": "#fcdf46",
+              "surface-container-highest": "#d9dde0",
+              "secondary": "#a53046",
+              "on-primary-fixed-variant": "#002a62",
+              "secondary-container": "#ffc2c7",
+              "error-dim": "#9f0519",
+              "primary-container": "#6e9fff",
+              "surface-tint": "#0057bd",
+              "secondary-dim": "#95233b",
+              "primary": "#0057bd",
+              "on-error-container": "#570008",
+              "inverse-primary": "#4d8eff",
+              "surface-container-high": "#dfe3e6",
+              "on-error": "#ffefee",
+              "background": "#f5f7f9",
+              "surface-container": "#e5e9eb",
+              "on-secondary-fixed": "#6e0022",
+              "on-background": "#2c2f31",
+              "surface-container-low": "#eef1f3",
+              "surface": "#f5f7f9",
+              "on-primary": "#f0f2ff"
+            },
+            fontFamily: {
+              "headline": ["Plus Jakarta Sans"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .neon-glow {
+        box-shadow: 0 0 20px rgba(0, 87, 189, 0.15);
+      }
+      .glass-effect {
+        backdrop-filter: blur(20px);
+        background-color: rgba(245, 247, 249, 0.8);
+      }
+    </style>
+</head>
+<body class="bg-surface text-on-surface overflow-x-hidden">
+<!-- Suppressing Shared Nav Shells for focused Onboarding experience -->
+<main class="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative">
+<!-- Abstract Background Elements (Neon Playground) -->
+<div class="absolute top-[-10%] right-[-10%] w-96 h-96 bg-primary-container/20 blur-[120px] rounded-full -z-10"></div>
+<div class="absolute bottom-[-5%] left-[-5%] w-80 h-80 bg-secondary-container/20 blur-[100px] rounded-full -z-10"></div>
+<!-- Header Section -->
+<div class="text-center max-w-4xl mb-16">
+<div class="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-surface-container-low rounded-full">
+<span class="material-symbols-outlined text-primary" data-icon="lock">lock</span>
+<span class="text-sm font-bold tracking-widest text-primary uppercase">Vault Protocol v1.0</span>
+</div>
+<h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-on-surface mb-8 leading-[1.1]">
+                당신의 금융 금고, <br/>
+<span class="text-primary">금고지기</span>에 오신 것을 환영합니다
+            </h1>
+<p class="text-lg md:text-xl text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
+                단순한 가계부를 넘어 당신의 자산을 지키고 키우는 지능형 금고. <br/>
+                가장 나다운 금융 관리 방식을 선택하여 시작해보세요.
+            </p>
+</div>
+<!-- Mode Selection Grid (Asymmetric & Bento-inspired) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
+<!-- 용돈 모드 (Pocket Money Mode) -->
+<button class="group relative bg-surface-container-lowest p-8 rounded-xl text-left border-2 border-transparent hover:border-primary-container transition-all duration-300 shadow-xl shadow-on-surface/5 flex flex-col h-full active:scale-95">
+<div class="w-16 h-16 bg-secondary-container rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="account_balance_wallet" style="font-variation-settings: 'FILL' 1;">account_balance_wallet</span>
+</div>
+<div class="flex-grow">
+<h3 class="text-2xl font-bold mb-4">용돈 모드</h3>
+<p class="text-on-surface-variant leading-relaxed mb-6">
+                        정기적인 용돈을 관리하고 저축 습관을 기르고 싶은 틴에이저와 입문자를 위한 가장 가벼운 시작.
+                    </p>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1 bg-surface-container text-xs font-bold rounded-full">#저축왕</span>
+<span class="px-3 py-1 bg-surface-container text-xs font-bold rounded-full">#용돈기입장</span>
+</div>
+</div>
+<div class="mt-8 flex items-center text-primary font-bold gap-2">
+                    선택하기 <span class="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</button>
+<!-- 기본 모드 (Standard Mode) - Highlighted with Primary Gradient -->
+<button class="group relative bg-primary p-8 rounded-xl text-left shadow-2xl shadow-primary/20 flex flex-col h-full active:scale-95 overflow-hidden">
+<!-- Decorative Glow Overlay -->
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary-container/30 blur-3xl -mr-10 -mt-10"></div>
+<div class="w-16 h-16 bg-on-primary rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="dashboard" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+</div>
+<div class="flex-grow text-on-primary relative z-10">
+<div class="inline-block px-3 py-1 bg-on-primary/10 rounded-full text-[10px] font-black uppercase tracking-widest mb-4">Most Popular</div>
+<h3 class="text-2xl font-bold mb-4">기본 모드</h3>
+<p class="text-on-primary/80 leading-relaxed mb-6">
+                        표준적인 가계부 기능과 자산 분석을 제공합니다. 고정 지출과 변동 지출을 완벽하게 통제하고 싶은 분들을 위해.
+                    </p>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1 bg-on-primary/20 text-xs font-bold rounded-full">#올인원</span>
+<span class="px-3 py-1 bg-on-primary/20 text-xs font-bold rounded-full">#자산분석</span>
+</div>
+</div>
+<div class="mt-8 flex items-center text-on-primary font-bold gap-2 relative z-10">
+                    선택하기 <span class="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</button>
+<!-- 복수 수입원 모드 (Multi-Stream Mode) -->
+<button class="group relative bg-surface-container-lowest p-8 rounded-xl text-left border-2 border-transparent hover:border-tertiary transition-all duration-300 shadow-xl shadow-on-surface/5 flex flex-col h-full active:scale-95">
+<div class="w-16 h-16 bg-tertiary-container rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-tertiary text-3xl" data-icon="payments" style="font-variation-settings: 'FILL' 1;">payments</span>
+</div>
+<div class="flex-grow">
+<h3 class="text-2xl font-bold mb-4">복수 수입원 모드</h3>
+<p class="text-on-surface-variant leading-relaxed mb-6">
+                        N잡러와 프리랜서를 위해 설계된 모드. 여러 개의 수입원과 복잡한 세금 계산까지 똑똑하게 관리하세요.
+                    </p>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1 bg-surface-container text-xs font-bold rounded-full">#N잡러</span>
+<span class="px-3 py-1 bg-surface-container text-xs font-bold rounded-full">#세금계산</span>
+</div>
+</div>
+<div class="mt-8 flex items-center text-primary font-bold gap-2">
+                    선택하기 <span class="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</button>
+</div>
+<!-- Secondary Information / Trust -->
+<div class="mt-20 flex flex-col md:flex-row items-center gap-12 text-on-surface-variant/60">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+<span class="text-sm font-semibold">데이터 256비트 암호화</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="cloud_sync">security</span>
+<span class="text-sm font-semibold">오직 이 PC에만 보관 (로컬 100% 보안)</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+<span class="text-sm font-semibold">AI 맞춤 금융 레포트</span>
+</div>
+</div>
+</main>
+<!-- Visual Polish: Bottom Glass Gradient -->
+<footer class="fixed bottom-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-secondary to-tertiary opacity-40"></footer>
+</body></html>
