@@ -51,7 +51,7 @@ function isInPeriod(tx, period, anchor) {
 }
 
 function isConfirmed(tx, confirmedOnly) {
-  return confirmedOnly ? tx?.status === 'confirmed' : true
+  return confirmedOnly ? tx?.status === 'CONFIRMED' : true
 }
 
 function isDebt(tx) {
@@ -64,7 +64,7 @@ function isTransfer(tx) {
 
 export function selectDataConfidence(transactions = []) {
   if (!transactions.length) return 0
-  const confirmed = transactions.filter((t) => t.status === 'confirmed').length
+  const confirmed = transactions.filter((t) => t.status === 'CONFIRMED').length
   return confirmed / transactions.length
 }
 

@@ -8,7 +8,7 @@ const summaryCards = [
 ]
 
 const allocation = [
-  { name: '현금성 자산', amount: 3500000, color: '#D4AF37' },
+  { name: '현금성 자산', amount: 3500000, color: '#FFD700' },
   { name: '국내/해외 투자', amount: 5250000, color: '#1C3A36' },
   { name: '부동산/실물', amount: 3700000, color: '#26334D' },
 ]
@@ -25,7 +25,7 @@ export default function AssetsPage() {
       tooltip: {
         trigger: 'item',
         backgroundColor: '#1a1a1a',
-        borderColor: '#D4AF37',
+        borderColor: '#FFD700',
         borderWidth: 1,
         textStyle: { color: '#EDEDED' },
         formatter: (params) =>
@@ -47,9 +47,20 @@ export default function AssetsPage() {
           emphasis: {
             scale: true,
             scaleSize: 10,
-            itemStyle: { shadowBlur: 18, shadowColor: 'rgba(212,175,55,0.3)' },
+            itemStyle: { shadowBlur: 22, shadowColor: 'rgba(255,215,0,0.42)' },
           },
-          data: allocation.map((a) => ({ value: a.amount, name: a.name, itemStyle: { color: a.color } })),
+          data: allocation.map((a) => ({
+            value: a.amount,
+            name: a.name,
+            itemStyle:
+              a.name === '현금성 자산'
+                ? {
+                    color: a.color,
+                    shadowBlur: 16,
+                    shadowColor: 'rgba(255,215,0,0.35)',
+                  }
+                : { color: a.color },
+          })),
         },
       ],
       graphic: [
@@ -59,7 +70,7 @@ export default function AssetsPage() {
           top: '46%',
           style: {
             text: '황금자산',
-            fill: '#D4AF37',
+            fill: '#F1C40F',
             fontSize: 12,
             fontWeight: 600,
           },
@@ -70,7 +81,7 @@ export default function AssetsPage() {
           top: '52%',
           style: {
             text: `₩${total.toLocaleString('ko-KR')}`,
-            fill: '#EDEDED',
+            fill: '#FFD700',
             fontSize: 20,
             fontWeight: 800,
           },
@@ -106,7 +117,7 @@ export default function AssetsPage() {
       <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
         <section className="bg-[#232323] rounded-xl p-6 shadow-[0_12px_32px_rgba(0,0,0,0.4)] border border-[#26334D]/20">
           <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-[#EDEDED]">
-            <span className="material-symbols-outlined text-[#D4AF37]">auto_graph</span>
+            <span className="material-symbols-outlined text-[#F1C40F]">auto_graph</span>
             포트폴리오 비중
           </h2>
           <div className="rounded-2xl bg-gradient-to-br from-[#1f1f1f] to-[#171717] border border-[#26334D]/25 p-4">
@@ -114,13 +125,13 @@ export default function AssetsPage() {
           </div>
         </section>
 
-        <div className="p-[1px] rounded-xl bg-[#D4AF37]/30 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+        <div className="p-[1px] rounded-xl bg-[#FFD700]/50 shadow-[0_12px_32px_rgba(0,0,0,0.4)] hover:shadow-[0_0_0_1px_rgba(255,215,0,0.55),0_0_24px_rgba(255,215,0,0.35)] transition-all duration-300">
           <section className="bg-[#232323] rounded-xl p-6 h-full">
             <h2
               className="text-lg mb-4 flex items-center gap-2 text-[#EDEDED]"
               style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 700 }}
             >
-              <span className="material-symbols-outlined text-[#D4AF37]">workspace_premium</span>
+              <span className="material-symbols-outlined text-[#F1C40F]">workspace_premium</span>
               VIP 자산 리포트
             </h2>
             <div className="space-y-3">
@@ -133,7 +144,7 @@ export default function AssetsPage() {
                 </div>
               ))}
             </div>
-            <button className="mt-4 w-full py-3 rounded-xl bg-[#D4AF37] text-[#121212] font-bold hover:shadow-[0_0_24px_rgba(212,175,55,0.45)] transition-all">
+            <button className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-[#F1C40F] via-[#FFD700] to-[#F1C40F] text-[#121212] font-bold shadow-[0_0_18px_rgba(255,215,0,0.28)] hover:shadow-[0_0_28px_rgba(255,215,0,0.5)] transition-all">
               PB 시나리오 시뮬레이션 실행
             </button>
           </section>

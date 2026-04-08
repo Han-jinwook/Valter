@@ -4,7 +4,6 @@ import TopNavBar from './components/layout/TopNavBar'
 import AIChatPanel from './components/chat/AIChatPanel'
 import DashboardPage from './pages/DashboardPage'
 import BudgetPage from './pages/BudgetPage'
-import LedgerPage from './pages/LedgerPage'
 import AssetsPage from './pages/AssetsPage'
 import VaultPage from './pages/VaultPage'
 import OnboardingPage from './pages/OnboardingPage'
@@ -19,7 +18,6 @@ export default function App() {
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/assets" element={<AssetsPage />} />
         <Route path="/budget" element={<BudgetPage />} />
         <Route path="/vault" element={<VaultPage />} />
@@ -29,7 +27,7 @@ export default function App() {
 }
 
 function AppShell() {
-  const { isUploadOpen, isCreditModalOpen } = useUIStore()
+  const { isUploadOpen, isCreditModalOpen, isChatPanelOpen } = useUIStore()
   const { isDragging, setDragging } = useVaultStore()
   const dragCounter = useRef(0)
 
@@ -75,7 +73,7 @@ function AppShell() {
           <Outlet />
         </div>
         <div className="w-1.5 bg-surface-container hover:bg-primary/30 rounded-full hidden lg:block cursor-col-resize transition-colors shrink-0" />
-        <AIChatPanel />
+        {isChatPanelOpen && <AIChatPanel />}
       </main>
 
       {(isUploadOpen || isDragging) && <FileUploadOverlay />}

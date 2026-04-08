@@ -22,6 +22,166 @@ begin
 end
 $$;
 
+-- ==========================================================
+-- Core domain tables mapped from src/types/schema.ts
+-- ==========================================================
+
+-- Enums for strict domain states
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'tx_type') then
+    create type public.tx_type as enum ('INCOME', 'EXPENSE', 'TRANSFER');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'tx_status') then
+    create type public.tx_status as enum ('PENDING', 'CONFIRMED');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'vault_review_status') then
+    create type public.vault_review_status as enum ('NEEDS_REVIEW', 'COMPLETED');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'user_tier') then
+    create type public.user_tier as enum ('FREE', 'PRO');
+  end if;
+end
+$$;
+
+-- User profile extension (User & Credit domain)
+alter table public.profiles
+  add column if not exists nickname text,
+  add column if not exists tier public.user_tier not null default 'FREE';
+
+-- Transaction (데이터 원장)
+create table if not exists public.transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  tx_date date not null,
+  amount numeric(14,2) not null,
+  merchant text not null,
+  category text not null default '',
+  tx_type public.tx_type not null,
+  ai_confidence numeric(3,2) not null default 0.0 check (ai_confidence >= 0 and ai_confidence <= 1),
+  status public.tx_status not null default 'PENDING',
+  is_internal boolean not null default false,
+  linked_document_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_transactions_user_date on public.transactions(user_id, tx_date desc);
+create index if not exists idx_transactions_user_status on public.transactions(user_id, status);
+
+-- Goal & Budget - Goal
+create table if not exists public.goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  emoji text not null default '🎯',
+  target_amount numeric(14,2) not null check (target_amount >= 0),
+  current_amount numeric(14,2) not null default 0 check (current_amount >= 0),
+  deadline_date date not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_goals_user_deadline on public.goals(user_id, deadline_date);
+
+-- Goal & Budget - RecurringBill
+create table if not exists public.recurring_bills (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  amount numeric(14,2) not null check (amount >= 0),
+  due_date smallint not null check (due_date between 1 and 31),
+  reminder_rules text[] not null default array['D-7','D-1','D-DAY']::text[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_recurring_bills_user_due_date on public.recurring_bills(user_id, due_date);
+
+-- VaultDocument (비밀금고 파일)
+create table if not exists public.vault_documents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  file_name text not null,
+  file_type text not null,
+  file_url text not null,
+  upload_date timestamptz not null default now(),
+  parsed_data jsonb,
+  review_status public.vault_review_status not null default 'NEEDS_REVIEW',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_vault_documents_user_upload_date on public.vault_documents(user_id, upload_date desc);
+
+-- Optional FK link: transactions.linked_document_id -> vault_documents.id
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'transactions_linked_document_id_fkey'
+  ) then
+    alter table public.transactions
+      add constraint transactions_linked_document_id_fkey
+      foreign key (linked_document_id)
+      references public.vault_documents(id)
+      on delete set null;
+  end if;
+end
+$$;
+
+-- updated_at triggers for new tables
+drop trigger if exists trg_transactions_updated_at on public.transactions;
+create trigger trg_transactions_updated_at
+before update on public.transactions
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_goals_updated_at on public.goals;
+create trigger trg_goals_updated_at
+before update on public.goals
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_recurring_bills_updated_at on public.recurring_bills;
+create trigger trg_recurring_bills_updated_at
+before update on public.recurring_bills
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_vault_documents_updated_at on public.vault_documents;
+create trigger trg_vault_documents_updated_at
+before update on public.vault_documents
+for each row execute function public.set_updated_at();
+
+-- RLS for new core tables
+alter table public.transactions enable row level security;
+alter table public.goals enable row level security;
+alter table public.recurring_bills enable row level security;
+alter table public.vault_documents enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'transactions' and policyname = 'transactions_owner_all') then
+    create policy transactions_owner_all on public.transactions
+      for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+  end if;
+
+  if not exists (select 1 from pg_policies where tablename = 'goals' and policyname = 'goals_owner_all') then
+    create policy goals_owner_all on public.goals
+      for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+  end if;
+
+  if not exists (select 1 from pg_policies where tablename = 'recurring_bills' and policyname = 'recurring_bills_owner_all') then
+    create policy recurring_bills_owner_all on public.recurring_bills
+      for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+  end if;
+
+  if not exists (select 1 from pg_policies where tablename = 'vault_documents' and policyname = 'vault_documents_owner_all') then
+    create policy vault_documents_owner_all on public.vault_documents
+      for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+  end if;
+end
+$$;
+
 -- User profile
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,

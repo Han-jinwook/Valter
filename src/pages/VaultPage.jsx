@@ -29,7 +29,7 @@ export default function VaultPage() {
             <h1 className="text-3xl md:text-4xl font-extrabold mt-1 text-[#EDEDED]">원본/증빙 보관함</h1>
             <p className="text-xs text-[#595959] mt-2">당신의 가장 소중한 자산 증빙을 안전하게 암호화하여 보관합니다.</p>
           </div>
-          <button className="px-4 py-2 rounded-full bg-[#D4AF37] text-[#121212] text-sm font-bold hover:brightness-110 transition-all">
+          <button className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FFD700] via-[#FFEA70] to-[#FFD700] text-[#121212] text-sm font-bold shadow-[0_0_18px_rgba(255,215,0,0.34)] hover:shadow-[0_0_28px_rgba(255,234,112,0.55)] transition-all">
             새 문서 입금
           </button>
         </div>
@@ -43,7 +43,10 @@ export default function VaultPage() {
             <p className="text-[10px] text-[#595959] font-bold mb-1">금고 사용량</p>
             <p className="text-2xl font-extrabold tabular-nums text-[#EDEDED]">2.8 GB</p>
             <div className="w-full h-2 rounded-full bg-[#1b1b1b] mt-2 overflow-hidden">
-              <div className="h-full bg-[#D4AF37] rounded-full" style={{ width: '56%' }} />
+              <div
+                className="h-full rounded-full shadow-[0_0_12px_rgba(255,215,0,0.45)]"
+                style={{ width: '56%', background: 'linear-gradient(90deg, #FFD700 0%, #FFEA70 60%, #FFD700 100%)' }}
+              />
             </div>
           </div>
           <div className="rounded-2xl bg-[#232323] border border-[#26334D]/20 p-4 backdrop-blur-sm">
@@ -74,13 +77,13 @@ export default function VaultPage() {
               <button
                 key={doc.name}
                 onClick={() => setOpenedDoc(doc)}
-                className={`text-left rounded-2xl border border-[#D4AF37]/20 p-5 bg-gradient-to-br backdrop-blur-sm ${
+                className={`text-left rounded-2xl border border-[#FFD700]/40 p-5 bg-gradient-to-br backdrop-blur-sm ${
                   cardTone[doc.type] || cardTone.명세서
-                } shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:border-[#D4AF37]/50 hover:shadow-[0_0_0_1px_rgba(212,175,55,0.35),0_0_24px_rgba(212,175,55,0.25)] hover:scale-[1.015] transition-all duration-300`}
+                } shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:border-[#FFEA70]/80 hover:shadow-[0_0_0_1px_rgba(255,234,112,0.55),0_0_28px_rgba(255,234,112,0.34)] hover:scale-[1.015] transition-all duration-300`}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <span className="material-symbols-outlined text-[#D4AF37]/80">lock</span>
-                  <span className={`text-[11px] font-bold ${doc.status === '완료' ? 'text-[#8D95A3]' : 'text-[#B08968]'}`}>
+                  <span className="material-symbols-outlined text-[#FFEA70] drop-shadow-[0_0_6px_rgba(255,234,112,0.35)]">lock</span>
+                  <span className={`text-[11px] font-bold ${doc.status === '완료' ? 'text-[#A9B4C7]' : 'text-[#FFD166]'}`}>
                     {doc.status}
                   </span>
                 </div>

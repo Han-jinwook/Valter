@@ -1,20 +1,63 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useUIStore } from '../../stores/uiStore'
+import { classifyTier1Intent, Tier1Intent } from '../../ai/intentRouter'
 
 export default function AIChatPanel() {
-  const { messages, hoveredTxId, transactions, confirmTransaction, isProcessing } = useVaultStore()
+  const {
+    messages,
+    hoveredTxId,
+    transactions,
+    confirmTransaction,
+    askAboutTransaction,
+    isProcessing,
+    acknowledgeAlert,
+    resolveLedgerReview,
+  } = useVaultStore()
   const isChartMode = useUIStore((s) => s.isChartMode)
   const openVizMode = useUIStore((s) => s.openVizMode)
   const restoreTrinityMode = useUIStore((s) => s.restoreTrinityMode)
   const [input, setInput] = useState('')
   const bottomRef = useRef(null)
+  const navigate = useNavigate()
 
   const hoveredTx = hoveredTxId ? transactions.find((t) => t.id === hoveredTxId) : null
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const handleSubmit = () => {
+    const text = input.trim()
+    if (!text) return
+
+    const routed = classifyTier1Intent(text)
+
+    switch (routed.intent) {
+      case Tier1Intent.ROUTE_LEDGER: {
+        console.log('[Intent] ROUTE_LEDGER 트리거됨')
+        navigate('/')
+        window.setTimeout(() => {
+          const target = document.getElementById('data-vault-ledger')
+          target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 100)
+        break
+      }
+      case Tier1Intent.ANALYZE_UNCLASSIFIED: {
+        const pendingRows = transactions.filter((tx) => tx.status === 'PENDING')
+        console.log(`[Intent] ANALYZE_UNCLASSIFIED 트리거됨 (${pendingRows.length}건)`)
+        pendingRows.forEach((tx) => askAboutTransaction(tx.id))
+        break
+      }
+      default: {
+        console.log('[Intent] GENERAL_CHAT 트리거됨')
+        break
+      }
+    }
+
+    setInput('')
+  }
 
   return (
     <aside className="w-[380px] shrink-0 bg-surface-container-lowest/80 backdrop-blur-xl rounded-xl shadow-2xl flex flex-col overflow-hidden hidden lg:flex">
@@ -41,7 +84,14 @@ export default function AIChatPanel() {
       {/* Messages */}
       <div className="flex-grow overflow-y-auto p-6 space-y-4 text-sm custom-scrollbar">
         {messages.map((msg) => (
-          <ChatBubble key={msg.id} msg={msg} transactions={transactions} onConfirm={confirmTransaction} />
+          <ChatBubble
+            key={msg.id}
+            msg={msg}
+            transactions={transactions}
+            onConfirm={confirmTransaction}
+            onAcknowledge={acknowledgeAlert}
+            onLedgerResolve={resolveLedgerReview}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -69,6 +119,9 @@ export default function AIChatPanel() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSubmit()
+            }}
             className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm py-2 placeholder:text-outline-variant"
             placeholder="검색, 질문, 기록 등 무엇이든 지시하세요..."
           />
@@ -83,7 +136,10 @@ export default function AIChatPanel() {
           >
             <span className="material-symbols-outlined text-lg">radio_button_checked</span>
           </button>
-          <button className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-105 transition-transform active:scale-95 shrink-0">
+          <button
+            onClick={handleSubmit}
+            className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-105 transition-transform active:scale-95 shrink-0"
+          >
             <span className="material-symbols-outlined text-xl">send</span>
           </button>
         </div>
@@ -92,7 +148,7 @@ export default function AIChatPanel() {
   )
 }
 
-function ChatBubble({ msg, transactions, onConfirm }) {
+function ChatBubble({ msg, transactions, onConfirm, onAcknowledge, onLedgerResolve }) {
   if (msg.type === 'processing') {
     return (
       <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
@@ -126,8 +182,8 @@ function ChatBubble({ msg, transactions, onConfirm }) {
   }
 
   if (msg.type === 'confirm') {
-    const tx = transactions.find((t) => t.id === msg.txId)
-    const isResolved = msg.resolved || (tx && tx.status === 'confirmed')
+    const tx = transactions.find((t) => t.id === String(msg.txId))
+    const isResolved = msg.resolved || (tx && tx.status === 'CONFIRMED')
     return (
       <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
         <div className="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-tl-none leading-relaxed">
@@ -138,7 +194,7 @@ function ChatBubble({ msg, transactions, onConfirm }) {
             {msg.options.map((opt) => (
               <button
                 key={opt.label}
-                onClick={() => onConfirm(msg.txId, opt.category)}
+                onClick={() => onConfirm(String(msg.txId), opt.category)}
                 className="px-3 py-1.5 bg-primary/5 text-primary text-xs font-bold rounded-lg border border-primary/15 hover:bg-primary hover:text-white transition-all duration-200 active:scale-95"
               >
                 {opt.label}
@@ -149,6 +205,66 @@ function ChatBubble({ msg, transactions, onConfirm }) {
           <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
             <span className="material-symbols-outlined text-sm">check_circle</span>
             분류 완료
+          </div>
+        )}
+        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
+      </div>
+    )
+  }
+
+  if (msg.type === 'alert') {
+    return (
+      <div className="flex flex-col gap-1 max-w-[90%] animate-fade-in">
+        <div
+          className={`p-4 rounded-2xl rounded-tl-none leading-relaxed border ${
+            msg.resolved
+              ? 'bg-surface-container-low border-surface-container'
+              : 'bg-gradient-to-r from-[#FFD700] via-[#FFEA70] to-[#F1C40F] border-[#FFD700]/80 alert-gold-glow'
+          }`}
+        >
+          <p className={`${msg.resolved ? 'text-on-surface' : 'text-[#121212]'} font-semibold`}>{msg.text}</p>
+        </div>
+        {!msg.resolved && (
+          <div className="flex flex-wrap gap-2 mt-1 ml-1">
+            {(msg.options || ['롸져!', '확인']).map((opt) => (
+              <button
+                key={opt}
+                onClick={() => onAcknowledge(msg.id, opt)}
+                className="px-3 py-1.5 bg-gradient-to-r from-[#FFD700]/25 via-[#FFEA70]/20 to-[#F1C40F]/25 text-[#735A00] text-xs font-bold rounded-lg border border-[#FFD700]/70 shadow-[0_0_10px_rgba(255,215,0,0.25)] hover:shadow-[0_0_16px_rgba(255,215,0,0.45)] hover:bg-[#FFD700] hover:text-[#121212] transition-all duration-200 active:scale-95"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
+      </div>
+    )
+  }
+
+  if (msg.type === 'ledger_review') {
+    return (
+      <div className="flex flex-col gap-1 max-w-[90%] animate-fade-in">
+        <div className="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-tl-none leading-relaxed border border-primary/15">
+          <p className="font-semibold">{msg.text}</p>
+        </div>
+        {!msg.resolved && (
+          <div className="flex flex-wrap gap-2 mt-1 ml-1">
+            {(msg.options || []).map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => onLedgerResolve(msg.id, msg.ledgerTxId, opt.category)}
+                className="px-3 py-1.5 bg-primary/5 text-primary text-xs font-bold rounded-lg border border-primary/20 hover:bg-primary hover:text-white transition-all duration-200 active:scale-95"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {msg.resolved && (
+          <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
+            <span className="material-symbols-outlined text-sm">check_circle</span>
+            챗봇에서 분류 반영 완료
           </div>
         )}
         <span className="text-[10px] text-outline ml-1">{msg.time}</span>

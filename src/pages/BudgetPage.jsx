@@ -1,155 +1,164 @@
-const fixedExpenses = [
-  { icon: 'subscriptions', name: 'Netflix 구독', desc: '월 자동결제', amount: 17000 },
-  { icon: 'cell_tower', name: '통신비', desc: '가족 데이터 결합', amount: 50000 },
-  { icon: 'home', name: '주택 담보 대출', desc: '할부 24/60', amount: 850000 },
+import { useState } from 'react'
+import { useVaultStore } from '../stores/vaultStore'
+import { useUIStore } from '../stores/uiStore'
+
+const alertOptions = ['한 달 전', '1주 전', '하루 전', '당일', '알림 끔']
+
+const initialRows = [
+  { id: 1, name: '아파트 관리비', kind: 'regular', amount: 250000, notify: '하루 전' },
+  { id: 2, name: '속도위반 벌금', kind: 'onetime', amount: 120000, notify: '1주 전' },
+  { id: 3, name: '가족 여행 예산', kind: 'onetime', amount: 1800000, notify: '한 달 전' },
+  { id: 4, name: '자동차 보험 갱신', kind: 'regular', amount: 98000, notify: '당일' },
 ]
 
-const variableBudgets = [
-  { label: '외식', spent: 180000, budget: 300000, color: '#a53046' },
-  { label: '쇼핑', spent: 45000, budget: 150000, color: '#0057bd' },
-  { label: '교통', spent: 80000, budget: 100000, color: '#6a5b00' },
+const goalCards = [
+  { id: 1, emoji: '✈️', title: '올여름 하와이 가족 여행', current: 1850000, target: 3000000, dday: 'D-120' },
+  { id: 2, emoji: '💻', title: '업무용 노트북 업그레이드', current: 1275000, target: 1500000, dday: 'D-35' },
+  { id: 3, emoji: '🏠', title: '내 집 마련 초기 자금', current: 9200000, target: 20000000, dday: 'D-420' },
 ]
 
-const savingsGoals = [
-  { icon: 'laptop_mac', name: '새 맥북 프로', saved: 1500000, goal: 2000000, pct: 75, gradient: 'from-blue-50 to-white', border: 'border-primary/10', color: 'text-primary', bgColor: 'bg-primary' },
-  { icon: 'flight', name: '제주도 가족 여행', saved: 400000, goal: 1000000, pct: 40, gradient: 'from-red-50 to-white', border: 'border-secondary/10', color: 'text-secondary', bgColor: 'bg-secondary' },
-]
+function pct(current, target) {
+  return Math.min(100, Math.round((current / target) * 100))
+}
 
 export default function BudgetPage() {
+  const [rows, setRows] = useState(initialRows)
+  const simulateEmailLanding = useVaultStore((s) => s.simulateEmailLanding)
+  const openChatPanel = useUIStore((s) => s.openChatPanel)
+
+  const setNotify = (id, notify) => {
+    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, notify } : row)))
+  }
+
+  const runLandingSimulation = () => {
+    openChatPanel()
+    simulateEmailLanding()
+  }
+
+  const monthlyBudget = 3200000
+  const monthlySpent = 1845000
+  const monthlyRemain = monthlyBudget - monthlySpent
+  const monthlyPct = Math.round((monthlySpent / monthlyBudget) * 100)
+
   return (
-    <>
-      {/* Summary */}
-      <section className="bg-surface-container-lowest p-8 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-        <div className="flex flex-col gap-6">
-          <div className="flex justify-between items-end">
-            <div>
-              <span className="text-xs font-bold text-on-surface-variant tracking-widest uppercase">가용 자금</span>
-              <h1 className="text-4xl font-extrabold text-on-surface mt-1 tabular-nums">₩450,000</h1>
-            </div>
-            <span className="text-sm font-medium text-primary bg-primary/10 px-3 py-1 rounded-full">
-              +2.5% 지난달 대비
-            </span>
-          </div>
-
-          {/* Stacked bar */}
-          <div className="h-6 w-full flex rounded-full overflow-hidden bg-surface-container-low">
-            <div className="h-full bg-primary flex items-center justify-center text-[10px] text-white font-bold" style={{ width: '45%' }}>수입</div>
-            <div className="h-full bg-secondary flex items-center justify-center text-[10px] text-white font-bold" style={{ width: '30%' }}>고정</div>
-            <div className="h-full bg-tertiary-container flex items-center justify-center text-[10px] text-on-tertiary-container font-bold" style={{ width: '15%' }}>변동</div>
-            <div className="h-full bg-surface-container-highest" style={{ width: '10%' }} />
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-4 text-center">
-            {[
-              { label: '총 수입', value: '₩3,200,000', color: 'text-primary' },
-              { label: '고정 지출', value: '₩1,850,000', color: 'text-secondary' },
-              { label: '변동 예산', value: '₩900,000', color: 'text-tertiary' },
-              { label: '저축 잠재력', value: '₩450,000', color: 'text-on-surface' },
-            ].map((s) => (
-              <div key={s.label}>
-                <p className="text-[10px] font-bold text-on-surface-variant">{s.label}</p>
-                <p className={`text-sm font-bold tabular-nums ${s.color}`}>{s.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Fixed + Variable grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Fixed Expenses */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <span className="material-symbols-outlined text-secondary">lock</span>
-              고정 지출
-            </h2>
-            <span className="text-xs font-semibold text-on-surface-variant">{fixedExpenses.length}개 항목</span>
-          </div>
-          <div className="flex flex-col gap-3">
-            {fixedExpenses.map((item) => (
-              <div key={item.name} className="group flex items-center justify-between p-3 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center">
-                    <span className="material-symbols-outlined text-on-surface text-lg">{item.icon}</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold">{item.name}</p>
-                    <p className="text-xs text-on-surface-variant">{item.desc}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-bold tabular-nums">₩{item.amount.toLocaleString()}</span>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-1 hover:text-primary"><span className="material-symbols-outlined text-sm">edit</span></button>
-                    <button className="p-1 hover:text-secondary"><span className="material-symbols-outlined text-sm">close</span></button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+    <section className="space-y-6">
+      {/* Hero: goals first */}
+      <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+        <div>
+          <p className="text-xs font-bold text-on-surface-variant tracking-widest uppercase">예산 & 목표</p>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">나의 꿈과 목표</h1>
+          <p className="text-sm text-on-surface-variant mt-1">가슴 뛰는 목표를 먼저 보고, 아래에서 지출/알림을 통제합니다.</p>
         </div>
 
-        {/* Variable Budget */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <span className="material-symbols-outlined text-tertiary">category</span>
-              변동 예산
-            </h2>
-            <span className="text-xs font-semibold text-on-surface-variant">추적 중</span>
-          </div>
-          <div className="flex flex-col gap-5">
-            {variableBudgets.map((b) => (
-              <div key={b.label} className="flex flex-col gap-2">
-                <div className="flex justify-between text-xs font-bold">
-                  <span>{b.label}</span>
-                  <span style={{ color: b.color }}>
-                    ₩{b.spent.toLocaleString()} / ₩{b.budget.toLocaleString()}
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {goalCards.map((goal) => {
+            const progress = pct(goal.current, goal.target)
+            return (
+              <article key={goal.id} className="bg-white rounded-2xl border border-surface-container shadow-sm p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-2xl">{goal.emoji}</div>
+                  <span className="text-xs font-bold text-outline">{goal.dday}</span>
+                </div>
+                <h3 className="font-bold text-sm leading-snug min-h-[38px]">{goal.title}</h3>
+                <div className="mt-3 w-full h-2.5 rounded-full bg-surface-container-low overflow-hidden">
+                  <div className="h-full bg-primary rounded-full transition-all duration-700" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs">
+                  <span className="text-on-surface-variant">진행률 {progress}%</span>
+                  <span className="font-bold tabular-nums text-primary">
+                    ₩{goal.current.toLocaleString('ko-KR')} / ₩{goal.target.toLocaleString('ko-KR')}
                   </span>
                 </div>
-                <div className="h-3 w-full bg-surface-container-low rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${(b.spent / b.budget) * 100}%`, backgroundColor: b.color }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              </article>
+            )
+          })}
         </div>
       </div>
 
-      {/* Savings & Quest Goals */}
-      <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">military_tech</span>
-            저축 및 퀘스트
-          </h2>
-          <button className="text-xs font-bold text-primary hover:underline">+ 새 목표</button>
+      {/* Monthly budget strip */}
+      <div className="bg-surface-container-lowest rounded-xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <h2 className="text-lg font-bold">이번 달 가용 예산</h2>
+          <div className="text-sm font-bold tabular-nums">
+            <span className="text-on-surface-variant mr-2">잔액</span>
+            <span className="text-primary">₩{monthlyRemain.toLocaleString('ko-KR')}</span>
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {savingsGoals.map((g) => (
-            <div key={g.name} className={`relative overflow-hidden p-6 rounded-2xl bg-gradient-to-br ${g.gradient} border ${g.border}`}>
-              <div className="flex justify-between items-start mb-4">
-                <div className="w-12 h-12 bg-surface-container-lowest rounded-2xl shadow-sm flex items-center justify-center">
-                  <span className={`material-symbols-outlined ${g.color}`}>{g.icon}</span>
-                </div>
-                <span className={`text-2xl font-black ${g.color} opacity-20`}>{g.pct}%</span>
-              </div>
-              <h3 className="font-bold text-on-surface">{g.name}</h3>
-              <p className="text-xs text-on-surface-variant mb-4 tabular-nums">
-                ₩{g.saved.toLocaleString()} / ₩{g.goal.toLocaleString()}
-              </p>
-              <div className="h-2 w-full bg-surface-container-lowest/50 rounded-full overflow-hidden">
-                <div className={`h-full ${g.bgColor} transition-all duration-700`} style={{ width: `${g.pct}%` }} />
-              </div>
-            </div>
-          ))}
+        <div className="w-full h-3 rounded-full bg-surface-container-low overflow-hidden">
+          <div className="h-full bg-primary rounded-full transition-all duration-700" style={{ width: `${monthlyPct}%` }} />
+        </div>
+        <div className="mt-2 text-xs text-on-surface-variant">
+          ₩{monthlySpent.toLocaleString('ko-KR')} 사용 / 총 예산 ₩{monthlyBudget.toLocaleString('ko-KR')}
         </div>
       </div>
-    </>
+
+      {/* Alert table as supporter */}
+      <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div>
+            <p className="text-xs font-bold text-on-surface-variant tracking-widest uppercase">서포터 영역</p>
+            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">고정 지출 및 알림 통제실</h2>
+            <p className="text-sm text-on-surface-variant mt-1">목표 달성을 방해하는 고정 지출과 알림 타이밍을 관리하세요.</p>
+          </div>
+          <button
+            onClick={runLandingSimulation}
+            className="px-4 py-2 rounded-full bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-95"
+          >
+            🔔 이메일 랜딩 시뮬레이션
+          </button>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-surface-container">
+        <table className="w-full border-collapse">
+          <thead className="bg-surface-container-low/50">
+            <tr>
+              <th className="px-5 py-3 text-left text-[10px] uppercase tracking-wider text-outline font-bold">항목명</th>
+              <th className="px-5 py-3 text-left text-[10px] uppercase tracking-wider text-outline font-bold">유형</th>
+              <th className="px-5 py-3 text-right text-[10px] uppercase tracking-wider text-outline font-bold">예상 금액</th>
+              <th className="px-5 py-3 text-left text-[10px] uppercase tracking-wider text-outline font-bold">알림 설정</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-surface-container hover:bg-surface-container-low/40 transition-colors">
+                <td className="px-5 py-4">
+                  <div className="font-semibold text-on-surface">{row.name}</div>
+                </td>
+                <td className="px-5 py-4">
+                  {row.kind === 'regular' ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary/10 text-primary">
+                      정기성(매월)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-tertiary-container/30 text-on-tertiary-container">
+                      일회성
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-4 text-right font-bold tabular-nums">₩{row.amount.toLocaleString('ko-KR')}</td>
+                <td className="px-5 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    {alertOptions.map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => setNotify(row.id, opt)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                          row.notify === opt
+                            ? 'bg-primary/12 text-primary border-primary/25'
+                            : 'bg-white text-on-surface-variant border-surface-container hover:border-primary/20'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </section>
   )
 }
