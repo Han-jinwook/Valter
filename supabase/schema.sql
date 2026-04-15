@@ -44,11 +44,6 @@ begin
 end
 $$;
 
--- User profile extension (User & Credit domain)
-alter table public.profiles
-  add column if not exists nickname text,
-  add column if not exists tier public.user_tier not null default 'FREE';
-
 -- Transaction (데이터 원장)
 create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
@@ -131,6 +126,17 @@ begin
 end
 $$;
 
+-- Auto timestamp trigger function (must exist before any trigger creation)
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 -- updated_at triggers for new tables
 drop trigger if exists trg_transactions_updated_at on public.transactions;
 create trigger trg_transactions_updated_at
@@ -187,7 +193,9 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text unique,
   display_name text,
+  nickname text,
   analysis_mode public.analysis_mode not null default 'single_income',
+  tier public.user_tier not null default 'FREE',
   locale text not null default 'ko-KR',
   timezone text not null default 'Asia/Seoul',
   created_at timestamptz not null default now(),
@@ -290,17 +298,6 @@ create table if not exists public.invite_claims (
   rewarded_at timestamptz not null default now(),
   unique (code, invitee_user_id)
 );
-
--- Auto timestamp trigger
-create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
 
 drop trigger if exists trg_profiles_updated_at on public.profiles;
 create trigger trg_profiles_updated_at
