@@ -106,6 +106,56 @@ function normalizeApiDate(dateText?: string | null) {
   return `${m[1]}.${m[2]}.${m[3]}`
 }
 
+function normalizeCategoryLabel(category?: string, merchant?: string) {
+  const raw = String(category || '').trim()
+  const merchantText = String(merchant || '').toLowerCase()
+  const key = raw.toLowerCase()
+  const dict: Record<string, string> = {
+    subscription: '구독',
+    subscriptions: '구독',
+    media: '미디어',
+    entertainment: '미디어',
+    cloud: '클라우드',
+    'cloud services': '클라우드',
+    service: '서비스',
+    services: '서비스',
+    shopping: '쇼핑',
+    food: '식비',
+    transport: '교통',
+    utility: '공과금',
+    utilities: '공과금',
+    tax: '세금',
+    income: '수입',
+    refund: '환급',
+    transfer: '이체',
+    others: '기타',
+    other: '기타',
+  }
+
+  if (dict[key]) return dict[key]
+  if (merchantText.includes('netflix') || merchantText.includes('youtube')) return '미디어'
+  if (merchantText.includes('openai') || merchantText.includes('google cloud')) return '클라우드'
+  if (merchantText.includes('coupang') || merchantText.includes('11st') || merchantText.includes('gmarket')) return '쇼핑'
+  return raw || '기타'
+}
+
+function buildConfirmOptionsForTx(tx: VaultTransaction): ConfirmOption[] {
+  if (tx.amount > 0) {
+    return [
+      { label: '수입', category: '수입' },
+      { label: '환급', category: '환급' },
+      { label: '기타', category: '기타' },
+      { label: '직접입력…', category: '__CUSTOM__' },
+    ]
+  }
+  return [
+    { label: '구독', category: '구독' },
+    { label: '서비스', category: '서비스' },
+    { label: '쇼핑', category: '쇼핑' },
+    { label: '직접입력…', category: '__CUSTOM__' },
+  ]
+}
+
 function buildPendingTxFromParsed(input: {
   merchant?: string
   date?: string | null
@@ -117,12 +167,12 @@ function buildPendingTxFromParsed(input: {
   sourceRef?: string
   location?: string
 }): VaultTransaction {
-  const normalizedCategory = String(input.category || '기타').trim() || '기타'
+  const merchant = String(input.merchant || '가맹점 미확인').trim() || '가맹점 미확인'
+  const normalizedCategory = normalizeCategoryLabel(input.category, merchant)
   const type: Transaction['type'] =
     /수입|환급|입금/.test(normalizedCategory) ? 'INCOME' : 'EXPENSE'
   const amountAbs = Math.abs(Number(input.amount || 0))
   const signedAmount = type === 'INCOME' ? amountAbs : -amountAbs
-  const merchant = String(input.merchant || '가맹점 미확인').trim() || '가맹점 미확인'
   const isTax = /세금|국세청|공과금/.test(`${normalizedCategory} ${merchant}`)
 
   return {
@@ -486,9 +536,31 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         location: 'Gmail 자동 수집',
       })
     )
+    const reviewTargets = nextTxs
+      .filter((tx) => tx.aiConfidence < 0.9 || tx.category === '기타')
+      .slice(0, 3)
 
     set((s) => ({
       transactions: [...nextTxs, ...s.transactions],
+      messages: [
+        ...s.messages,
+        {
+          id: ++_id,
+          role: 'ai',
+          type: 'text',
+          text: `Gmail에서 ${nextTxs.length}건을 원장에 반영했어요. 검토가 필요한 항목부터 확인해볼까요?`,
+          time: timeNow(),
+        },
+        ...reviewTargets.map((tx) => ({
+          id: ++_id,
+          role: 'ai' as const,
+          type: 'confirm' as const,
+          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역 분류를 확인해 주세요.`,
+          txId: Number(tx.id),
+          options: buildConfirmOptionsForTx(tx),
+          time: timeNow(),
+        })),
+      ],
     }))
     console.info('[GmailDebug][Store] inserted tx ids:', nextTxs.map((tx) => tx.id))
     return {
