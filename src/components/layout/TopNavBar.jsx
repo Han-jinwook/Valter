@@ -72,6 +72,15 @@ export default function TopNavBar() {
     return () => window.clearTimeout(timer)
   }, [gmailSyncPhase, setGmailSyncState])
 
+  useEffect(() => {
+    if (!isClearingGmail) return
+    const timer = window.setTimeout(() => {
+      setIsClearingGmail(false)
+      setGmailSyncState('idle', '')
+    }, 15000)
+    return () => window.clearTimeout(timer)
+  }, [isClearingGmail, setGmailSyncState])
+
   const handleConnectGmail = async () => {
     if (isConnectingGmail) return
     setIsConnectingGmail(true)
@@ -115,9 +124,14 @@ export default function TopNavBar() {
     setIsClearingGmail(true)
     setGmailSyncState('parsing', 'Gmail 기록 초기화 중...')
     try {
-      await clearGmailSyncTestData(true)
+      await withTimeout(
+        clearGmailSyncTestData(true),
+        10000,
+        'Gmail 기록 초기화가 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'
+      )
       setLastGmailSyncAt(null)
       setGmailSyncState('success', 'Gmail 테스트 기록 초기화 완료')
+      window.setTimeout(() => setGmailSyncState('idle', ''), 6000)
       window.alert('Gmail 테스트 기록 초기화가 완료되었습니다. 마지막 동기화 시각도 초기화되었습니다.')
       // Do not block UI on service worker readiness.
       const triggerSync = async () => {
@@ -188,7 +202,9 @@ export default function TopNavBar() {
               title={`Gmail 읽기 전용 연동 · ${formatLastSync(lastGmailSyncAt)}`}
             >
               <span className="material-symbols-outlined text-base">mark_email_read</span>
-              {(gmailSyncStatus || phaseFallbackLabel[gmailSyncPhase] || 'Gmail 연동')}
+              {isConnectingGmail
+                ? (gmailSyncStatus || '권한 요청 중...')
+                : (phaseFallbackLabel[gmailSyncPhase] || 'Gmail 연동')}
             </button>
 
             <button

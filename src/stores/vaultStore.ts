@@ -156,6 +156,15 @@ function buildConfirmOptionsForTx(tx: VaultTransaction): ConfirmOption[] {
   ]
 }
 
+function buildGmailIngestDigest(nextTxs: VaultTransaction[]) {
+  const lines = nextTxs.slice(0, 3).map((tx) => {
+    const ref = String(tx.sourceRef || '').slice(0, 8) || '-'
+    return `- ${tx.name} / ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} / 메일ID:${ref}`
+  })
+  const more = nextTxs.length > 3 ? `\n외 ${nextTxs.length - 3}건` : ''
+  return `Gmail에서 ${nextTxs.length}건을 원장에 반영했습니다.\n이메일 원문과 금액을 비교해 주세요.\n${lines.join('\n')}${more}`
+}
+
 function buildPendingTxFromParsed(input: {
   merchant?: string
   date?: string | null
@@ -539,8 +548,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       })
     )
     const reviewTargets = nextTxs
-      .filter((tx) => tx.aiConfidence < 0.9 || tx.category === '기타')
+      .filter((tx) => tx.status === 'PENDING')
       .slice(0, 3)
+    const digestText = buildGmailIngestDigest(nextTxs)
 
     set((s) => ({
       transactions: [...nextTxs, ...s.transactions],
@@ -550,14 +560,14 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           id: ++_id,
           role: 'ai',
           type: 'text',
-          text: `Gmail에서 ${nextTxs.length}건을 원장에 반영했어요. 검토가 필요한 항목부터 확인해볼까요?`,
+          text: digestText,
           time: timeNow(),
         },
         ...reviewTargets.map((tx) => ({
           id: ++_id,
           role: 'ai' as const,
           type: 'confirm' as const,
-          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역 분류를 확인해 주세요.`,
+          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역입니다. 이메일 원문 금액과 비교해 이 분류가 맞나요?`,
           txId: Number(tx.id),
           options: buildConfirmOptionsForTx(tx),
           time: timeNow(),

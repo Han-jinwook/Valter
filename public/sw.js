@@ -4,7 +4,6 @@ const KEY_AUTH = 'gmail_auth'
 const KEY_PROCESSED_IDS = 'gmail_processed_ids'
 const KEY_PENDING_QUEUE = 'gmail_pending_queue'
 const KEY_DIGEST_HOUR = 'gmail_digest_hour'
-const MIN_VALID_AMOUNT_KRW = 100
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -212,13 +211,8 @@ async function runGmailSync() {
     const parsed = await parseRes.json()
     const data = parsed?.data || {}
     const normalizedAmount = Math.abs(Number(data.amount || 0))
-    if (!Number.isFinite(normalizedAmount) || normalizedAmount < MIN_VALID_AMOUNT_KRW) {
-      completed += 1
-      successfullyProcessedIds.push(msg.id)
-      console.info('[GmailDebug][SW] skipped tiny/noisy amount:', msg.id, normalizedAmount)
-      await broadcast('GMAIL_SYNC_STATUS', { text: `노이즈 제외 (${completed}/${candidates.length})` })
-      return
-    }
+    const normalizedConfidence = Number(data.confidence || 0.8)
+    const isTinyAmount = Number.isFinite(normalizedAmount) && normalizedAmount > 0 && normalizedAmount < 100
 
     const item = {
       source: 'gmail',
@@ -227,8 +221,11 @@ async function runGmailSync() {
       date: data.date || null,
       amount: normalizedAmount,
       category: String(data.category || '기타').trim(),
-      reasoning: String(data.reasoning || '').trim(),
-      confidence: Number(data.confidence || 0.8),
+      reasoning: isTinyAmount
+        ? `${String(data.reasoning || '').trim() || '소액 결제로 추정됩니다.'} (원문 금액 재확인 권장)`
+        : String(data.reasoning || '').trim(),
+      // 소액 결제는 드롭하지 않고 검토 대상으로 보내기 위해 confidence를 낮춘다.
+      confidence: isTinyAmount ? Math.min(normalizedConfidence, 0.45) : normalizedConfidence,
     }
 
     await pushSinglePendingToQueue(item)
