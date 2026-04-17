@@ -21,7 +21,7 @@ function todayDate() {
 let _id = 100
 
 type ChatRole = 'ai' | 'user'
-type ChatType = 'text' | 'confirm' | 'processing' | 'result' | 'alert' | 'ledger_review'
+type ChatType = 'text' | 'confirm' | 'account_confirm' | 'processing' | 'result' | 'alert' | 'ledger_review'
 
 type ConfirmOption = {
   label: string
@@ -70,6 +70,7 @@ type IngestBackgroundResult = {
 type VaultState = {
   transactions: VaultTransaction[]
   messages: ChatMessage[]
+  knownAccounts: string[]
   lastLedgerDecision: LedgerDecision | null
   ledgerContextTitle: string
   activeLedgerFilter: LedgerFilter
@@ -89,9 +90,10 @@ type VaultState = {
   resolveLedgerReview: (messageId: number, ledgerTxId: number, category: string) => void
   clearLedgerDecision: () => void
   confirmTransaction: (txId: string, category: string) => void
+  confirmTransactionAccount: (txId: string, account: string) => void
   updateTransactionInline: (
     txId: string,
-    patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount'>>
+    patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount' | 'account'>>
   ) => void
   ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => IngestBackgroundResult
   syncPendingFromBackgroundQueue: () => Promise<number>
@@ -165,13 +167,15 @@ function buildConfirmOptionsForTx(tx: VaultTransaction): ConfirmOption[] {
   ]
 }
 
-function buildGmailIngestDigest(nextTxs: VaultTransaction[]) {
-  const lines = nextTxs.slice(0, 3).map((tx) => {
-    const ref = String(tx.sourceRef || '').slice(0, 8) || '-'
-    return `- ${tx.name} / ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} / 메일ID:${ref}`
-  })
-  const more = nextTxs.length > 3 ? `\n외 ${nextTxs.length - 3}건` : ''
-  return `Gmail에서 ${nextTxs.length}건을 원장에 반영했습니다.\n이메일 원문과 금액을 비교해 주세요.\n${lines.join('\n')}${more}`
+function buildAccountOptions(knownAccounts: string[]): ConfirmOption[] {
+  const unique = Array.from(new Set(knownAccounts.map((x) => String(x || '').trim()).filter(Boolean)))
+  if (!unique.length) {
+    return [{ label: '직접입력…', category: '__CUSTOM__' }]
+  }
+  return [
+    ...unique.slice(0, 4).map((account) => ({ label: account, category: account })),
+    { label: '직접입력…', category: '__CUSTOM__' },
+  ]
 }
 
 function buildPendingTxFromParsed(input: {
@@ -201,6 +205,7 @@ function buildPendingTxFromParsed(input: {
     sourceRef: input.sourceRef,
     date: normalizeApiDate(input.date),
     merchant,
+    account: '',
     name: merchant,
     location: input.location || '',
     userMemo: String(input.reasoning || '').trim() || `${normalizedCategory} 자동 분류`,
@@ -346,6 +351,7 @@ const initialMessages: ChatMessage[] = [
 export const useVaultStore = create<VaultState>((set, get) => ({
   transactions: initialTransactions,
   messages: initialMessages,
+  knownAccounts: [],
   lastLedgerDecision: null,
   ledgerContextTitle: '데이터 원장 (전체)',
   activeLedgerFilter: 'all',
@@ -507,8 +513,28 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }))
   },
 
+  confirmTransactionAccount: (txId, account) => {
+    const nextAccount = String(account || '').trim()
+    if (!nextAccount) return
+    set((s) => ({
+      knownAccounts: Array.from(new Set([nextAccount, ...s.knownAccounts])),
+      transactions: s.transactions.map((t) =>
+        t.id === txId ? { ...t, account: nextAccount } : t
+      ),
+      messages: [
+        ...s.messages.map((m) =>
+          m.type === 'account_confirm' && m.txId === Number(txId) ? { ...m, resolved: true } : m
+        ),
+      ],
+    }))
+  },
+
   updateTransactionInline: (txId, patch) => {
     set((s) => ({
+      knownAccounts:
+        patch.account && String(patch.account).trim()
+          ? Array.from(new Set([String(patch.account).trim(), ...s.knownAccounts]))
+          : s.knownAccounts,
       transactions: s.transactions.map((t) => {
         if (t.id !== txId) return t
         const next = { ...t, ...patch }
@@ -556,29 +582,20 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         location: 'Gmail 자동 수집',
       })
     )
-    const reviewTargets = nextTxs
-      .filter((tx) => tx.status === 'PENDING')
-      .slice(0, 3)
-    const digestText = buildGmailIngestDigest(nextTxs)
+    const knownAccounts = get().knownAccounts
+    const reviewTargets = nextTxs.slice(0, 3)
 
     set((s) => ({
       transactions: [...nextTxs, ...s.transactions],
       messages: [
         ...s.messages,
-        {
-          id: ++_id,
-          role: 'ai',
-          type: 'text',
-          text: digestText,
-          time: timeNow(),
-        },
         ...reviewTargets.map((tx) => ({
           id: ++_id,
           role: 'ai' as const,
-          type: 'confirm' as const,
-          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역입니다. 이메일 원문 금액과 비교해 이 분류가 맞나요?`,
+          type: 'account_confirm' as const,
+          text: `Gmail 반영: ${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')}\n어느 계정에서 결제됐나요?`,
           txId: Number(tx.id),
-          options: buildConfirmOptionsForTx(tx),
+          options: buildAccountOptions(knownAccounts),
           time: timeNow(),
         })),
       ],

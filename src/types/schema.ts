@@ -20,6 +20,8 @@ export interface Transaction {
   amount: number
   /** 거래처/가맹점명 */
   merchant: string
+  /** 출금/입금 계정명 (예: 현금, 통장1, 통장2) */
+  account?: string
   /** 카테고리명 (예: 식비, 교통, 수입) */
   category: string
   /** 수입/지출/이체 구분 */

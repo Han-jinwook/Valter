@@ -101,8 +101,8 @@ export default function TransactionTable() {
       className="bg-surface-container-lowest rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] overflow-hidden flex flex-col flex-grow min-h-[380px]"
     >
       {/* Header */}
-      <div className="px-8 py-6 border-b border-surface-container flex flex-wrap justify-between items-center gap-3">
-        <h3 key={ledgerContextTitle} className="font-bold text-lg animate-fade-in">
+      <div className="px-5 py-4 border-b border-surface-container flex flex-wrap justify-between items-center gap-2">
+        <h3 key={ledgerContextTitle} className="font-bold text-base animate-fade-in">
           {ledgerContextTitle}
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -129,10 +129,10 @@ export default function TransactionTable() {
         </div>
       </div>
 
-      <div className="px-8 pb-2 overflow-y-auto custom-scrollbar">
+      <div className="px-4 pb-2 overflow-y-auto custom-scrollbar">
         {groupedTransactions.map((group) => (
-          <div key={group.date} className="pt-4">
-            <div className="text-gray-500 text-sm font-medium pb-2">{fmtDateGroup(group.date)}</div>
+          <div key={group.date} className="pt-3">
+            <div className="text-gray-500 text-xs font-medium pb-1.5">{fmtDateGroup(group.date)}</div>
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-100">
               {group.items.map((tx) => {
                 const isHovered = hoveredTxId === tx.id
@@ -141,11 +141,11 @@ export default function TransactionTable() {
                     key={tx.id}
                     onMouseEnter={() => setHoveredTx(tx.id)}
                     onMouseLeave={() => setHoveredTx(null)}
-                    className={`px-4 md:px-5 py-4 bg-transparent transition-colors ${
+                    className={`px-3 md:px-4 py-3 bg-transparent transition-colors ${
                       isHovered ? 'bg-primary/[0.05]' : 'hover:bg-surface-container-low/50'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       <div
                         className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
                         style={{ backgroundColor: tx.iconBg }}
@@ -155,7 +155,7 @@ export default function TransactionTable() {
                         </span>
                       </div>
 
-                      <div className="min-w-[180px]">
+                      <div className="min-w-[150px]">
                         {isEditing(tx.id, 'name') ? (
                           <InlineInput
                             value={draftValue}
@@ -166,7 +166,7 @@ export default function TransactionTable() {
                         ) : (
                           <p
                             onDoubleClick={() => beginEdit(tx.id, 'name', tx.name)}
-                            className="font-bold text-base text-gray-900 truncate cursor-text"
+                            className="font-semibold text-sm text-gray-900 truncate cursor-text"
                           >
                             {tx.name}
                           </p>
@@ -182,7 +182,7 @@ export default function TransactionTable() {
                           tx.location && (
                             <p
                               onDoubleClick={() => beginEdit(tx.id, 'location', tx.location)}
-                              className="text-[11px] text-gray-500 mt-0.5 cursor-text"
+                              className="text-[10px] text-gray-500 mt-0.5 cursor-text"
                             >
                               {tx.location}
                             </p>
@@ -190,7 +190,7 @@ export default function TransactionTable() {
                         )}
                       </div>
 
-                      <div className="flex-1 min-w-[140px] px-2">
+                      <div className="flex-1 min-w-[120px] px-1.5">
                         {isEditing(tx.id, 'userMemo') ? (
                           <InlineInput
                             value={draftValue}
@@ -201,14 +201,29 @@ export default function TransactionTable() {
                         ) : (
                           <p
                             onDoubleClick={() => beginEdit(tx.id, 'userMemo', tx.userMemo || '')}
-                            className="text-[12px] text-gray-700 cursor-text truncate"
+                            className="text-[11px] text-gray-700 cursor-text truncate"
                           >
                             {tx.userMemo || '메모를 더블클릭해 입력'}
                           </p>
                         )}
                       </div>
 
-                      <div className="ml-auto flex items-center gap-2 pr-2">
+                      <div className="ml-auto flex items-center gap-1.5 pr-1">
+                        {isEditing(tx.id, 'account') ? (
+                          <InlineInput
+                            value={draftValue}
+                            setValue={setDraftValue}
+                            onCommit={commitEdit}
+                            onCancel={cancelEdit}
+                          />
+                        ) : (
+                          <span
+                            onDoubleClick={() => beginEdit(tx.id, 'account', tx.account || '')}
+                            className="px-2 py-1 bg-surface-container-low text-on-surface-variant text-[11px] rounded-full font-semibold cursor-text"
+                          >
+                            {tx.account || '계정 미지정'}
+                          </span>
+                        )}
                         {isEditing(tx.id, 'category') ? (
                           <InlineInput
                             value={draftValue}
@@ -219,20 +234,20 @@ export default function TransactionTable() {
                         ) : tx.category ? (
                           <span
                             onDoubleClick={() => beginEdit(tx.id, 'category', tx.category)}
-                            className="px-3 py-1.5 bg-primary/10 text-primary text-sm rounded-full font-extrabold cursor-text"
+                            className="px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-extrabold cursor-text"
                           >
                             {tx.category}
                           </span>
                         ) : (
                           <span
                             onDoubleClick={() => beginEdit(tx.id, 'category', '')}
-                            className="px-3 py-1.5 bg-amber-100 text-amber-700 text-xs rounded-full font-bold cursor-text"
+                            className="px-2.5 py-1 bg-amber-100 text-amber-700 text-[11px] rounded-full font-bold cursor-text"
                           >
                             분류 대기
                           </span>
                         )}
                         {tx.status === 'PENDING' && (
-                          <span className="px-2.5 py-1 bg-red-100 text-red-700 text-[10px] rounded-full font-bold">
+                          <span className="px-2 py-1 bg-red-100 text-red-700 text-[10px] rounded-full font-bold">
                             🚨 검토 필요
                           </span>
                         )}
@@ -250,7 +265,7 @@ export default function TransactionTable() {
                       ) : (
                         <div
                           onDoubleClick={() => beginEdit(tx.id, 'amount', Math.abs(tx.amount))}
-                          className={`text-right text-lg font-bold tabular-nums cursor-text ${tx.amount > 0 ? 'text-primary' : 'text-gray-900'}`}
+                          className={`text-right text-base font-bold tabular-nums cursor-text ${tx.amount > 0 ? 'text-primary' : 'text-gray-900'}`}
                         >
                           {fmtAmount(tx.amount)}
                         </div>

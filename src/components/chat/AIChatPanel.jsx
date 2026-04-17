@@ -10,6 +10,7 @@ export default function AIChatPanel() {
     hoveredTxId,
     transactions,
     confirmTransaction,
+    confirmTransactionAccount,
     askAboutTransaction,
     isProcessing,
     acknowledgeAlert,
@@ -61,9 +62,9 @@ export default function AIChatPanel() {
   }
 
   return (
-    <aside className="w-[380px] shrink-0 bg-surface-container-lowest/80 backdrop-blur-xl rounded-xl shadow-2xl flex flex-col overflow-hidden hidden lg:flex">
+    <aside className="w-[360px] shrink-0 bg-surface-container-lowest/80 backdrop-blur-xl rounded-xl shadow-2xl flex flex-col overflow-hidden hidden lg:flex">
       {/* Header */}
-      <div className="p-6 border-b border-surface-container">
+      <div className="p-4 border-b border-surface-container">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-lg shadow-primary/20">
@@ -83,13 +84,14 @@ export default function AIChatPanel() {
       </div>
 
       {/* Messages */}
-      <div className="flex-grow overflow-y-auto p-6 space-y-4 text-sm custom-scrollbar">
+      <div className="flex-grow overflow-y-auto p-4 space-y-3 text-sm custom-scrollbar">
         {messages.map((msg) => (
           <ChatBubble
             key={msg.id}
             msg={msg}
             transactions={transactions}
             onConfirm={confirmTransaction}
+            onAccountConfirm={confirmTransactionAccount}
             onAcknowledge={acknowledgeAlert}
             onLedgerResolve={resolveLedgerReview}
           />
@@ -99,7 +101,7 @@ export default function AIChatPanel() {
 
       {/* Hover Context Chip */}
       {hoveredTx && (
-        <div className="px-6 py-2 animate-fade-in">
+        <div className="px-4 py-2 animate-fade-in">
           <div className="bg-primary/5 border border-primary/15 rounded-xl px-4 py-2.5 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-base">visibility</span>
             <span className="text-xs">
@@ -114,7 +116,7 @@ export default function AIChatPanel() {
       )}
 
       {/* Input */}
-      <div className="p-6 pt-3">
+      <div className="p-4 pt-2.5">
         <div className="relative flex items-center bg-surface-container-low rounded-2xl p-2 px-4 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
           <input
             type="text"
@@ -149,7 +151,7 @@ export default function AIChatPanel() {
   )
 }
 
-function ChatBubble({ msg, transactions, onConfirm, onAcknowledge, onLedgerResolve }) {
+function ChatBubble({ msg, transactions, onConfirm, onAccountConfirm, onAcknowledge, onLedgerResolve }) {
   const [isCustomInputOpen, setIsCustomInputOpen] = useState(false)
   const [customCategory, setCustomCategory] = useState('')
 
@@ -252,6 +254,82 @@ function ChatBubble({ msg, transactions, onConfirm, onAcknowledge, onLedgerResol
             )}
             <span className="material-symbols-outlined text-sm">check_circle</span>
             분류 완료
+          </div>
+        )}
+        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
+      </div>
+    )
+  }
+
+  if (msg.type === 'account_confirm') {
+    const tx = transactions.find((t) => t.id === String(msg.txId))
+    const isResolved = msg.resolved || Boolean(tx?.account)
+    const options = Array.isArray(msg.options) ? msg.options : []
+    return (
+      <div className="flex flex-col gap-1 max-w-[88%] animate-fade-in">
+        <div className="bg-surface-container-low text-on-surface p-3 rounded-2xl rounded-tl-none leading-relaxed">
+          {msg.text}
+        </div>
+        {!isResolved ? (
+          <>
+            <div className="flex flex-wrap gap-2 mt-1 ml-1">
+              {options.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => {
+                    if (opt.category === '__CUSTOM__') {
+                      setIsCustomInputOpen(true)
+                      return
+                    }
+                    onAccountConfirm(String(msg.txId), opt.category)
+                  }}
+                  className="px-2.5 py-1 bg-primary/5 text-primary text-xs font-bold rounded-lg border border-primary/15 hover:bg-primary hover:text-white transition-all duration-200 active:scale-95"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {isCustomInputOpen && (
+              <div className="mt-2 ml-1 flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const next = customCategory.trim()
+                      if (!next || !msg.txId) return
+                      onAccountConfirm(String(msg.txId), next)
+                      setIsCustomInputOpen(false)
+                      setCustomCategory('')
+                    }
+                    if (e.key === 'Escape') setIsCustomInputOpen(false)
+                  }}
+                  placeholder="계정명 입력 (예: 통장1)"
+                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  onClick={() => {
+                    const next = customCategory.trim()
+                    if (!next || !msg.txId) return
+                    onAccountConfirm(String(msg.txId), next)
+                    setIsCustomInputOpen(false)
+                    setCustomCategory('')
+                  }}
+                  className="px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-bold"
+                >
+                  확인
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
+            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+              {tx?.account || '계정 확인'}
+            </span>
+            <span className="material-symbols-outlined text-sm">check_circle</span>
+            계정 연결 완료
           </div>
         )}
         <span className="text-[10px] text-outline ml-1">{msg.time}</span>
