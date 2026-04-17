@@ -78,12 +78,15 @@ function normalizeModelData(data, fallbackSource) {
   const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : null
   const amount = parseAmount(data?.amount)
   const confidence = Math.max(0, Math.min(1, Number(data?.confidence ?? 0.75)))
+  const category = normalizeCategory(data?.category, `${fallbackSource}\n${merchant}`)
+  const reasoningRaw = String(data?.reasoning || '').trim()
+  const hasHangul = /[가-힣]/.test(reasoningRaw)
   return {
     merchant,
     date,
     amount,
-    category: normalizeCategory(data?.category, `${fallbackSource}\n${merchant}`),
-    reasoning: String(data?.reasoning || '').trim(),
+    category,
+    reasoning: hasHangul ? reasoningRaw : `${merchant} ${category} 결제 메일 기준 자동 분류`,
     confidence,
   }
 }
@@ -125,6 +128,7 @@ export async function handler(event) {
     '광고/푸터/개인식별성이 불필요한 정보는 무시하고 merchant/date/amount/category/reasoning/confidence를 추출한다.',
     'amount는 반드시 숫자만 반환한다. 통화기호, 쉼표, KRW 문자열을 포함하지 않는다.',
     'category는 한국어 한 단어로 반환한다. (예: 식비, 쇼핑, 구독, 서비스, 미디어, 교통, 공과금, 세금, 수입, 환급, 이체, 기타)',
+    'reasoning은 한국어 1문장으로 간결하게 작성한다. 이 문장은 원장 적요에 표시된다.',
     '부가세 표기 문구는 세금 카테고리 근거로 사용하지 않는다.',
     '반드시 JSON 형식으로만 응답한다.',
     '{"merchant":"","date":"YYYY-MM-DD","amount":0,"category":"","reasoning":"","confidence":0.0}',

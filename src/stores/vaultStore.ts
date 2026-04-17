@@ -161,6 +161,7 @@ function buildPendingTxFromParsed(input: {
   date?: string | null
   amount?: number
   category?: string
+  reasoning?: string
   confidence?: number
   linkedDocumentId?: string | null
   source?: VaultTransaction['source']
@@ -184,7 +185,7 @@ function buildPendingTxFromParsed(input: {
     merchant,
     name: merchant,
     location: input.location || '',
-    userMemo: '',
+    userMemo: String(input.reasoning || '').trim() || `${normalizedCategory} 자동 분류`,
     category: normalizedCategory,
     type,
     aiConfidence: Math.max(0, Math.min(1, Number(input.confidence || 0.9))),
@@ -530,6 +531,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         date: item.date,
         amount: item.amount,
         category: item.category,
+        reasoning: item.reasoning,
         confidence: item.confidence,
         source: 'gmail',
         sourceRef: item.sourceMessageId,

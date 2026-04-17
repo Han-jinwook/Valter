@@ -4,6 +4,7 @@ const KEY_AUTH = 'gmail_auth'
 const KEY_PROCESSED_IDS = 'gmail_processed_ids'
 const KEY_PENDING_QUEUE = 'gmail_pending_queue'
 const KEY_DIGEST_HOUR = 'gmail_digest_hour'
+const MIN_VALID_AMOUNT_KRW = 100
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -210,12 +211,21 @@ async function runGmailSync() {
 
     const parsed = await parseRes.json()
     const data = parsed?.data || {}
+    const normalizedAmount = Math.abs(Number(data.amount || 0))
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount < MIN_VALID_AMOUNT_KRW) {
+      completed += 1
+      successfullyProcessedIds.push(msg.id)
+      console.info('[GmailDebug][SW] skipped tiny/noisy amount:', msg.id, normalizedAmount)
+      await broadcast('GMAIL_SYNC_STATUS', { text: `노이즈 제외 (${completed}/${candidates.length})` })
+      return
+    }
+
     const item = {
       source: 'gmail',
       sourceMessageId: msg.id,
       merchant: String(data.merchant || from || '가맹점 미확인').trim(),
       date: data.date || null,
-      amount: Number(data.amount || 0),
+      amount: normalizedAmount,
       category: String(data.category || '기타').trim(),
       reasoning: String(data.reasoning || '').trim(),
       confidence: Number(data.confidence || 0.8),
