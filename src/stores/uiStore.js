@@ -7,6 +7,9 @@ export const useUIStore = create((set) => ({
   isChatPanelOpen: true,
   isLeftExpanded: true,
   isChartMode: false,
+  gmailSyncPhase: 'idle',
+  gmailSyncStatus: '',
+  lastGmailSyncAt: null,
 
   openUpload: () => set({ isUploadOpen: true, isUploadModalOpen: true }),
   closeUpload: () => set({ isUploadOpen: false, isUploadModalOpen: false }),
@@ -19,4 +22,15 @@ export const useUIStore = create((set) => ({
 
   openVizMode: () => set({ isLeftExpanded: false, isChartMode: true }),
   restoreTrinityMode: () => set({ isLeftExpanded: true, isChartMode: false }),
+  setGmailSyncState: (phase, status = '') =>
+    set({
+      gmailSyncPhase: phase || 'idle',
+      gmailSyncStatus: status || '',
+    }),
+  setGmailSyncStatus: (status) =>
+    set({
+      gmailSyncStatus: status || '',
+      gmailSyncPhase: status ? 'reading' : 'idle',
+    }),
+  setLastGmailSyncAt: (timestamp) => set({ lastGmailSyncAt: timestamp || null }),
 }))

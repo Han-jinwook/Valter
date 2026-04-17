@@ -1,5 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useState } from 'react'
 import { useUIStore } from '../../stores/uiStore'
+import {
+  clearGmailSyncTestData,
+  connectGmailReadonly,
+  setDigestHourPreference,
+  validateGmailReadonlyAccess,
+} from '../../lib/gmailSync'
 
 const navItems = [
   { path: '/', desktopLabel: '지기(Keeper)', mobileLabel: '지기' },
@@ -10,8 +17,123 @@ const navItems = [
 
 export default function TopNavBar() {
   const location = useLocation()
-  const { openCreditModal } = useUIStore()
+  const {
+    openCreditModal,
+    gmailSyncPhase,
+    gmailSyncStatus,
+    lastGmailSyncAt,
+    setGmailSyncState,
+    setLastGmailSyncAt,
+  } = useUIStore()
+  const [isConnectingGmail, setIsConnectingGmail] = useState(false)
+  const [isClearingGmail, setIsClearingGmail] = useState(false)
   const isActive = (path) => location.pathname === path
+
+  const phaseFallbackLabel = {
+    idle: 'Gmail 연동',
+    connecting: 'Gmail 연결 중...',
+    reading: '메일 읽는 중...',
+    parsing: '메일 분석 중...',
+    success: '동기화 완료',
+    error: '동기화 오류',
+  }
+
+  const formatLastSync = (timestamp) => {
+    if (!timestamp) return '마지막 동기화 없음'
+    const value = typeof timestamp === 'number' ? timestamp : Number(timestamp)
+    if (!Number.isFinite(value)) return '마지막 동기화 없음'
+    return `마지막 동기화 ${new Date(value).toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
+  }
+
+  const withTimeout = (promise, ms, message) =>
+    new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error(message)), ms)
+      promise
+        .then((value) => {
+          window.clearTimeout(timer)
+          resolve(value)
+        })
+        .catch((error) => {
+          window.clearTimeout(timer)
+          reject(error)
+        })
+    })
+
+  const handleConnectGmail = async () => {
+    if (isConnectingGmail) return
+    setIsConnectingGmail(true)
+    setGmailSyncState('connecting', 'Gmail 연결 중...')
+    try {
+      setGmailSyncState('connecting', '권한 요청 중...')
+      const token = await withTimeout(
+        connectGmailReadonly(),
+        30000,
+        'Gmail 연동 시간이 초과되었습니다. 팝업 차단을 해제하고 다시 시도해 주세요.'
+      )
+      setGmailSyncState('connecting', '연결 확인 중...')
+      await validateGmailReadonlyAccess(token.accessToken)
+      await setDigestHourPreference(20)
+      if (Notification.permission === 'default') {
+        await Notification.requestPermission()
+      }
+      const registration = await navigator.serviceWorker?.ready
+      registration?.active?.postMessage({ type: 'SET_GMAIL_DIGEST_HOUR', payload: 20 })
+      registration?.active?.postMessage({ type: 'GMAIL_SYNC_TICK' })
+      setGmailSyncState('reading', '메일 읽는 중...')
+      window.setTimeout(() => {
+        setGmailSyncState('idle', '')
+      }, 15000)
+      window.alert('Gmail 읽기 전용 연동이 완료되었습니다. 이제 결제 메일을 조용히 정리합니다.')
+    } catch (error) {
+      setGmailSyncState('error', 'Gmail 연동 실패')
+      window.alert(error instanceof Error ? error.message : 'Gmail 연동 중 오류가 발생했습니다.')
+    } finally {
+      setIsConnectingGmail(false)
+    }
+  }
+
+  const handleResetGmailTestData = async () => {
+    if (isClearingGmail) return
+    const ok = window.confirm(
+      'Gmail 테스트 기록(읽은 메일 ID/일일 카운트/대기 큐)을 초기화할까요?\nOAuth 연동 정보는 유지됩니다.'
+    )
+    if (!ok) return
+
+    setIsClearingGmail(true)
+    setGmailSyncState('parsing', 'Gmail 기록 초기화 중...')
+    try {
+      await clearGmailSyncTestData(true)
+      setLastGmailSyncAt(null)
+      setGmailSyncState('success', 'Gmail 테스트 기록 초기화 완료')
+      window.alert('Gmail 테스트 기록 초기화가 완료되었습니다. 마지막 동기화 시각도 초기화되었습니다.')
+      // Do not block UI on service worker readiness.
+      const triggerSync = async () => {
+        const controller = navigator.serviceWorker?.controller
+        if (controller) {
+          controller.postMessage({ type: 'GMAIL_SYNC_TICK' })
+          return
+        }
+        try {
+          const registration = await Promise.race([
+            navigator.serviceWorker?.ready ?? Promise.resolve(null),
+            new Promise((resolve) => window.setTimeout(() => resolve(null), 1200)),
+          ])
+          registration?.active?.postMessage({ type: 'GMAIL_SYNC_TICK' })
+        } catch {
+          // ignore background sync trigger failure
+        }
+      }
+      void triggerSync()
+    } catch (error) {
+      setGmailSyncState('error', 'Gmail 기록 초기화 실패')
+      window.alert(error instanceof Error ? error.message : 'Gmail 기록 초기화 중 오류가 발생했습니다.')
+    } finally {
+      setIsClearingGmail(false)
+    }
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
@@ -47,6 +169,28 @@ export default function TopNavBar() {
               className="hidden sm:inline-block px-3 md:px-4 py-1.5 rounded-full font-bold text-xs md:text-sm tabular-nums cursor-pointer transition-colors bg-surface-container text-primary hover:bg-surface-container-high"
             >
               1,250.3 C
+            </button>
+
+            <button
+              onClick={handleConnectGmail}
+              disabled={isConnectingGmail}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full font-bold text-xs md:text-sm cursor-pointer transition-colors bg-surface-container text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50"
+              title={`Gmail 읽기 전용 연동 · ${formatLastSync(lastGmailSyncAt)}`}
+            >
+              <span className="material-symbols-outlined text-base">mark_email_read</span>
+              {isConnectingGmail || gmailSyncStatus
+                ? (gmailSyncStatus || 'Gmail 연결 중...')
+                : (phaseFallbackLabel[gmailSyncPhase] || 'Gmail 연동')}
+            </button>
+
+            <button
+              onClick={handleResetGmailTestData}
+              disabled={isClearingGmail}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full font-bold text-xs md:text-sm cursor-pointer transition-colors bg-surface-container text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50"
+              title="Gmail 테스트 기록 초기화"
+            >
+              <span className="material-symbols-outlined text-base">restart_alt</span>
+              {isClearingGmail ? '초기화 중...' : 'Gmail 기록 초기화'}
             </button>
 
             <button className="p-2 rounded-full transition-all active:scale-95 text-on-surface-variant hover:bg-primary/10">

@@ -27,9 +27,16 @@ export default function App() {
 }
 
 function AppShell() {
-  const { isUploadModalOpen, isCreditModalOpen, isChatPanelOpen } = useUIStore()
-  const { isDragging, setDragging } = useVaultStore()
+  const {
+    isUploadModalOpen,
+    isCreditModalOpen,
+    isChatPanelOpen,
+    setGmailSyncState,
+    setLastGmailSyncAt,
+  } = useUIStore()
+  const { isDragging, setDragging, ingestBackgroundParsedEntries, syncPendingFromBackgroundQueue } = useVaultStore()
   const dragCounter = useRef(0)
+  const gmailStatusTimerRef = useRef(null)
 
   useEffect(() => {
     const onEnter = (e) => {
@@ -64,6 +71,108 @@ function AppShell() {
       document.removeEventListener('drop', onDrop)
     }
   }, [setDragging])
+
+  useEffect(() => {
+    syncPendingFromBackgroundQueue().catch((error) => {
+      console.warn('[GmailSync] queue drain failed', error)
+    })
+  }, [syncPendingFromBackgroundQueue])
+
+  useEffect(() => {
+    const postSyncTick = async () => {
+      const registration = await navigator.serviceWorker?.ready
+      registration?.active?.postMessage({ type: 'GMAIL_SYNC_TICK' })
+    }
+
+    const derivePhaseFromStatus = (text) => {
+      if (!text) return 'idle'
+      if (text.includes('권한') || text.includes('연결')) return 'connecting'
+      if (text.includes('메일 읽는 중')) return 'reading'
+      if (text.includes('분석 중') || text.includes('원장 반영')) return 'parsing'
+      if (text.includes('완료') || text.includes('없음')) return 'success'
+      if (text.includes('오류') || text.includes('실패') || text.includes('재연동')) return 'error'
+      return 'reading'
+    }
+
+    const clearStatusTimer = () => {
+      if (gmailStatusTimerRef.current) {
+        window.clearTimeout(gmailStatusTimerRef.current)
+        gmailStatusTimerRef.current = null
+      }
+    }
+
+    const setTransientStatus = (text, ttlMs = 5000, phase = derivePhaseFromStatus(text)) => {
+      clearStatusTimer()
+      setGmailSyncState(phase, text)
+      gmailStatusTimerRef.current = window.setTimeout(() => {
+        setGmailSyncState('idle', '')
+        gmailStatusTimerRef.current = null
+      }, ttlMs)
+    }
+
+    const onSwMessage = (event) => {
+      const type = event?.data?.type
+      if (type === 'GMAIL_SYNC_PARSED') {
+        const payload = event?.data?.payload
+        const items = Array.isArray(payload) ? payload : payload?.items || []
+        const incomingMeta = Array.isArray(payload?.meta) ? payload.meta : []
+        console.info('[GmailDebug][App] SW parsed event items:', items.length, items.map((x) => x?.sourceMessageId))
+        const result = ingestBackgroundParsedEntries(items)
+        const insertedSourceRefs = new Set(result?.insertedSourceRefs || [])
+        const mergedMeta = incomingMeta.map((meta) => ({
+          ...meta,
+          inserted: insertedSourceRefs.has(meta?.sourceMessageId),
+        }))
+        console.info('[GmailDebug][App] ingest result:', result)
+        console.info('[GmailDebug][App] parsed meta:', mergedMeta)
+        if (result.insertedCount > 0) {
+          clearStatusTimer()
+          setGmailSyncState('success', `원장 반영 완료 (+${result.insertedCount})`)
+          setLastGmailSyncAt(Date.now())
+        }
+      }
+      if (type === 'GMAIL_SYNC_STATUS') {
+        const text = String(event?.data?.payload?.text || '')
+        if (!text) {
+          clearStatusTimer()
+          setGmailSyncState('idle', '')
+        } else if (text.includes('재연동 필요')) {
+          clearStatusTimer()
+          setGmailSyncState('error', text)
+        } else if (text.includes('완료') || text.includes('없음')) {
+          setTransientStatus(text, 5000, 'success')
+          setLastGmailSyncAt(Date.now())
+        } else {
+          setTransientStatus(text, 12000, derivePhaseFromStatus(text))
+        }
+      }
+      if (type === 'GMAIL_SYNC_ERROR') {
+        console.warn('[GmailSync] service worker error:', event?.data?.payload)
+        setTransientStatus('Gmail 동기화 오류', 8000, 'error')
+      }
+      if (type === 'GMAIL_SYNC_AUTH_EXPIRED') {
+        console.info('[GmailSync] auth expired; reconnect Gmail is required')
+        clearStatusTimer()
+        setGmailSyncState('error', 'Gmail 재연동 필요')
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', onSwMessage)
+    const timer = window.setInterval(() => {
+      postSyncTick().catch(() => {})
+    }, 15 * 60 * 1000)
+
+    // Run once shortly after app boot.
+    window.setTimeout(() => {
+      postSyncTick().catch(() => {})
+    }, 3000)
+
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage)
+      window.clearInterval(timer)
+      clearStatusTimer()
+    }
+  }, [ingestBackgroundParsedEntries, setGmailSyncState, setLastGmailSyncAt])
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">

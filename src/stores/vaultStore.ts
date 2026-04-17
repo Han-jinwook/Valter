@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import type { Transaction } from '../types/schema'
 import { analyzeDocumentWithGPT } from '../lib/visionAIEngine'
+import {
+  drainBackgroundPendingQueue,
+  type BackgroundParsedItem,
+} from '../lib/gmailSync'
 
 function timeNow() {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
@@ -46,6 +50,8 @@ type LedgerDecision = {
 type VaultTransaction = Transaction & {
   id: string
   createdAt: string
+  source: 'upload' | 'gmail' | 'manual'
+  sourceRef?: string
   name: string
   location: string
   userMemo: string
@@ -55,6 +61,11 @@ type VaultTransaction = Transaction & {
 }
 
 type LedgerFilter = 'all' | 'review' | 'income' | 'expense'
+type IngestBackgroundResult = {
+  insertedCount: number
+  insertedSourceRefs: string[]
+  skippedDuplicateSourceRefs: string[]
+}
 
 type VaultState = {
   transactions: VaultTransaction[]
@@ -82,6 +93,8 @@ type VaultState = {
     txId: string,
     patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount'>>
   ) => void
+  ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => IngestBackgroundResult
+  syncPendingFromBackgroundQueue: () => Promise<number>
   processDroppedFiles: () => Promise<void>
   analyzeDocumentWithVision: (documentId: string, file: File, fileType: string) => Promise<string>
 }
@@ -93,10 +106,53 @@ function normalizeApiDate(dateText?: string | null) {
   return `${m[1]}.${m[2]}.${m[3]}`
 }
 
+function buildPendingTxFromParsed(input: {
+  merchant?: string
+  date?: string | null
+  amount?: number
+  category?: string
+  confidence?: number
+  linkedDocumentId?: string | null
+  source?: VaultTransaction['source']
+  sourceRef?: string
+  location?: string
+}): VaultTransaction {
+  const normalizedCategory = String(input.category || '기타').trim() || '기타'
+  const type: Transaction['type'] =
+    /수입|환급|입금/.test(normalizedCategory) ? 'INCOME' : 'EXPENSE'
+  const amountAbs = Math.abs(Number(input.amount || 0))
+  const signedAmount = type === 'INCOME' ? amountAbs : -amountAbs
+  const merchant = String(input.merchant || '가맹점 미확인').trim() || '가맹점 미확인'
+  const isTax = /세금|국세청|공과금/.test(`${normalizedCategory} ${merchant}`)
+
+  return {
+    id: String(++_id),
+    createdAt: new Date().toISOString(),
+    source: input.source || 'upload',
+    sourceRef: input.sourceRef,
+    date: normalizeApiDate(input.date),
+    merchant,
+    name: merchant,
+    location: input.location || '',
+    userMemo: '',
+    category: normalizedCategory,
+    type,
+    aiConfidence: Math.max(0, Math.min(1, Number(input.confidence || 0.9))),
+    status: 'PENDING',
+    isInternal: false,
+    linkedDocumentId: input.linkedDocumentId || null,
+    icon: isTax ? 'account_balance' : 'receipt_long',
+    iconBg: isTax ? '#ffe8c2' : '#ffd3dc',
+    iconColor: isTax ? '#875100' : '#7d2438',
+    amount: signedAmount || -1,
+  }
+}
+
 const initialTransactions: VaultTransaction[] = [
   {
     id: '1',
     createdAt: '2026-04-05T09:10:00.000Z',
+    source: 'manual',
     date: '2026.04.05',
     merchant: '고메 버거 키친',
     name: '고메 버거 키친',
@@ -116,6 +172,7 @@ const initialTransactions: VaultTransaction[] = [
   {
     id: '2',
     createdAt: '2026-04-04T09:10:00.000Z',
+    source: 'manual',
     date: '2026.04.04',
     merchant: '급여 입금',
     name: '급여 입금',
@@ -135,6 +192,7 @@ const initialTransactions: VaultTransaction[] = [
   {
     id: '3',
     createdAt: '2026-04-04T09:40:00.000Z',
+    source: 'manual',
     date: '2026.04.04',
     merchant: '카카오페이 송금',
     name: '카카오페이 송금',
@@ -154,6 +212,7 @@ const initialTransactions: VaultTransaction[] = [
   {
     id: '4',
     createdAt: '2026-04-03T09:10:00.000Z',
+    source: 'manual',
     date: '2026.04.03',
     merchant: '스팀 상점',
     name: '스팀 상점',
@@ -173,6 +232,7 @@ const initialTransactions: VaultTransaction[] = [
   {
     id: '5',
     createdAt: '2026-04-02T09:10:00.000Z',
+    source: 'manual',
     date: '2026.04.02',
     merchant: 'Netflix 구독',
     name: 'Netflix 구독',
@@ -391,6 +451,60 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }))
   },
 
+  ingestBackgroundParsedEntries: (items) => {
+    if (!items.length) {
+      return {
+        insertedCount: 0,
+        insertedSourceRefs: [],
+        skippedDuplicateSourceRefs: [],
+      }
+    }
+    const current = get().transactions
+    const knownRefs = new Set(current.map((tx) => tx.sourceRef).filter(Boolean))
+    const fresh = items.filter((item) => item.sourceMessageId && !knownRefs.has(item.sourceMessageId))
+    const skippedDuplicateSourceRefs = items
+      .filter((item) => item.sourceMessageId && knownRefs.has(item.sourceMessageId))
+      .map((item) => item.sourceMessageId)
+    console.info('[GmailDebug][Store] incoming:', items.length, 'knownRefs:', knownRefs.size, 'fresh:', fresh.length)
+    if (!fresh.length) {
+      return {
+        insertedCount: 0,
+        insertedSourceRefs: [],
+        skippedDuplicateSourceRefs,
+      }
+    }
+
+    const nextTxs = fresh.map((item) =>
+      buildPendingTxFromParsed({
+        merchant: item.merchant,
+        date: item.date,
+        amount: item.amount,
+        category: item.category,
+        confidence: item.confidence,
+        source: 'gmail',
+        sourceRef: item.sourceMessageId,
+        location: 'Gmail 자동 수집',
+      })
+    )
+
+    set((s) => ({
+      transactions: [...nextTxs, ...s.transactions],
+    }))
+    console.info('[GmailDebug][Store] inserted tx ids:', nextTxs.map((tx) => tx.id))
+    return {
+      insertedCount: nextTxs.length,
+      insertedSourceRefs: fresh.map((item) => item.sourceMessageId),
+      skippedDuplicateSourceRefs,
+    }
+  },
+
+  syncPendingFromBackgroundQueue: async () => {
+    const queued = await drainBackgroundPendingQueue()
+    console.info('[GmailDebug][Store] drain queue size:', queued.length)
+    if (!queued.length) return 0
+    return get().ingestBackgroundParsedEntries(queued).insertedCount
+  },
+
   processDroppedFiles: async () => {
     set({ isProcessing: true, isDragging: false })
 
@@ -405,6 +519,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       {
         id: String(++_id),
         createdAt: new Date().toISOString(),
+        source: 'upload',
         date: '2026.04.05',
         merchant: '맥도날드 강남점',
         name: '맥도날드 강남점',
@@ -424,6 +539,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       {
         id: String(++_id),
         createdAt: new Date().toISOString(),
+        source: 'upload',
         date: '2026.04.05',
         merchant: 'GS25 편의점',
         name: 'GS25 편의점',
@@ -443,6 +559,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       {
         id: newTxId,
         createdAt: new Date().toISOString(),
+        source: 'upload',
         date: '2026.04.05',
         merchant: '토스 송금',
         name: '토스 송금',
@@ -495,33 +612,16 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   analyzeDocumentWithVision: async (documentId, file, fileType) => {
     const parsed = await analyzeDocumentWithGPT(file)
-
-    const normalizedCategory = parsed.category || (fileType === '세무' ? '세금' : '기타')
-    const type: Transaction['type'] =
-      /수입|환급|입금/.test(normalizedCategory) ? 'INCOME' : 'EXPENSE'
-    const amountAbs = Math.abs(Number(parsed.amount || 0))
-    const signedAmount = type === 'INCOME' ? amountAbs : -amountAbs
-    const isTax = /세금|국세청|공과금/.test(`${normalizedCategory} ${parsed.merchant}`)
-
-    const newTx: VaultTransaction = {
-      id: String(++_id),
-      createdAt: new Date().toISOString(),
-      date: normalizeApiDate(parsed.date),
-      merchant: parsed.merchant || '가맹점 미확인',
-      name: parsed.merchant || '가맹점 미확인',
-      location: '',
-      userMemo: '',
-      category: normalizedCategory,
-      type,
-      aiConfidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0.9))),
-      status: 'PENDING',
-      isInternal: false,
+    const newTx = buildPendingTxFromParsed({
+      merchant: parsed.merchant,
+      date: parsed.date,
+      amount: parsed.amount,
+      category: parsed.category || (fileType === '세무' ? '세금' : '기타'),
+      confidence: parsed.confidence,
       linkedDocumentId: documentId,
-      icon: isTax ? 'account_balance' : 'receipt_long',
-      iconBg: isTax ? '#ffe8c2' : '#ffd3dc',
-      iconColor: isTax ? '#875100' : '#7d2438',
-      amount: signedAmount || -1,
-    }
+      source: 'upload',
+      location: '',
+    })
 
     set((s) => ({
       transactions: [newTx, ...s.transactions],
