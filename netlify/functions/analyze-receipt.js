@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -29,17 +32,79 @@ function safeParseJSON(text) {
   }
 }
 
+function todayDate() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function inferMerchantFromFilename(fileName) {
+  const base = String(fileName || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  if (!base) return '문서 업로드'
+  if (/^img\s*\d+$/i.test(base) || /^image\s*\d*$/i.test(base) || /^scan\s*\d*$/i.test(base)) {
+    return '문서 업로드'
+  }
+  return base.slice(0, 40)
+}
+
+function inferCategoryFromFilename(fileName) {
+  const text = String(fileName || '').toLowerCase()
+  if (/세금|국세|지방세|tax|vat/.test(text)) return '세금'
+  if (/관리비|공과금|전기|수도|가스/.test(text)) return '공과금'
+  if (/영수증|receipt/.test(text)) return '기타'
+  return '기타'
+}
+
+function extractAmountFromFilename(fileName) {
+  const matches = Array.from(String(fileName || '').matchAll(/([\d,]{3,})/g))
+    .map((m) => Number(String(m[1] || '').replace(/,/g, '')))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return matches.length ? Math.max(...matches) : 0
+}
+
+function buildLocalFallbackDocumentData(fileName) {
+  return {
+    merchant: inferMerchantFromFilename(fileName),
+    date: todayDate(),
+    amount: extractAmountFromFilename(fileName),
+    category: inferCategoryFromFilename(fileName),
+    reasoning: '로컬 폴백으로 문서명을 기준 삼아 초안만 만들었습니다. 항목을 확인해 주세요.',
+    confidence: 0.25,
+    fallback: 'local_filename_heuristic',
+  }
+}
+
+function readLocalEnvValue(key) {
+  try {
+    const envPath = path.join(process.cwd(), '.env')
+    if (!fs.existsSync(envPath)) return ''
+    const raw = fs.readFileSync(envPath, 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const idx = trimmed.indexOf('=')
+      if (idx < 0) continue
+      const name = trimmed.slice(0, idx).trim()
+      if (name !== key) continue
+      return trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '')
+    }
+  } catch {
+    // ignore local env parse failures and fall back to process env behavior
+  }
+  return ''
+}
+
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS_HEADERS, body: '' }
   }
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' })
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    return json(503, { error: 'OPENAI_API_KEY is not configured' })
   }
 
   let requestBody
@@ -51,8 +116,18 @@ export async function handler(event) {
 
   const imageBase64 = String(requestBody.imageBase64 || '')
   const mimeType = String(requestBody.mimeType || 'image/jpeg')
+  const fileName = String(requestBody.fileName || '')
   if (!imageBase64) {
     return json(400, { error: 'imageBase64 is required' })
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY || readLocalEnvValue('OPENAI_API_KEY')
+  if (!apiKey) {
+    return json(200, {
+      ok: true,
+      data: buildLocalFallbackDocumentData(fileName),
+      fallback: 'local_filename_heuristic',
+    })
   }
 
   const systemPrompt = [

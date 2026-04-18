@@ -39,7 +39,7 @@ export async function analyzeDocumentWithGPT(imageFile: File): Promise<VisionPar
   const response = await fetch('/api/analyze-receipt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64, mimeType }),
+    body: JSON.stringify({ imageBase64, mimeType, fileName: imageFile.name || '' }),
   })
 
   if (!response.ok) {

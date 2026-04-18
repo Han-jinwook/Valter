@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -32,6 +35,26 @@ function safeParseJSON(text) {
 function countKeywordHits(text, keywords) {
   const safe = String(text || '').toLowerCase()
   return keywords.reduce((count, keyword) => count + (safe.includes(keyword.toLowerCase()) ? 1 : 0), 0)
+}
+
+function readLocalEnvValue(key) {
+  try {
+    const envPath = path.join(process.cwd(), '.env')
+    if (!fs.existsSync(envPath)) return ''
+    const raw = fs.readFileSync(envPath, 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const idx = trimmed.indexOf('=')
+      if (idx < 0) continue
+      const name = trimmed.slice(0, idx).trim()
+      if (name !== key) continue
+      return trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '')
+    }
+  } catch {
+    // ignore local env parse failures and fall back to process env behavior
+  }
+  return ''
 }
 
 function parseAmount(value) {
@@ -400,7 +423,7 @@ export async function handler(event) {
     })
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY || readLocalEnvValue('OPENAI_API_KEY')
   if (!apiKey) {
     return json(200, {
       ok: true,
