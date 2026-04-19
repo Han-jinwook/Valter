@@ -17,3 +17,8 @@
   to = "/.netlify/functions/analyze-email-receipt"
   status = 200
 
+[[redirects]]
+  from = "/api/analyze-document"
+  to = "/.netlify/functions/analyze-document"
+  status = 200
+

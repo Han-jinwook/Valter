@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUIStore } from '../../stores/uiStore'
 import { useVaultStore } from '../../stores/vaultStore'
+import { analyzeDocumentChunks } from '../../lib/visionAIEngine'
+import { buildDocumentChunks } from '../../lib/documentChunking'
+import { detectUploadFileKind, extractLocalDocument } from '../../lib/documentParsers'
 
 const fileTypes = [
   { icon: 'picture_as_pdf', label: 'PDF', color: 'text-primary' },
@@ -14,10 +17,12 @@ export default function FileUploadOverlay() {
     isDragging,
     setDragging,
     analyzeDocumentWithVision,
+    ingestDocumentAnalysisBatch,
     setLedgerAiReviewContext,
     askAboutTransaction,
   } = useVaultStore()
   const [isScanning, setIsScanning] = useState(false)
+  const [scanLabel, setScanLabel] = useState('문서를 분석 중입니다...')
   const fileInputRef = useRef(null)
 
   const close = () => {
@@ -41,9 +46,35 @@ export default function FileUploadOverlay() {
       for (const file of selectedFiles) {
         const fakeDocumentId = `vault-doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         const parsedType = /세금|국세|고지서|tax/i.test(file.name) ? '세무' : '영수증'
-        const txId = await analyzeDocumentWithVision(fakeDocumentId, file, parsedType)
-        askAboutTransaction(txId)
+        const fileKind = detectUploadFileKind(file)
+
+        if (fileKind === 'unsupported') {
+          throw new Error(`${file.name} 은(는) 아직 지원되지 않는 형식입니다.`)
+        }
+
+        if (fileKind === 'image') {
+          setScanLabel(`이미지 분석 중: ${file.name}`)
+          const txId = await analyzeDocumentWithVision(fakeDocumentId, file, parsedType)
+          askAboutTransaction(txId)
+          continue
+        }
+
+        setScanLabel(`문서 파싱 중: ${file.name}`)
+        const extracted = await extractLocalDocument(file)
+        const chunks = buildDocumentChunks(extracted)
+        if (!chunks.length) {
+          throw new Error(`${file.name} 에서 분석할 텍스트를 찾지 못했습니다.`)
+        }
+
+        setScanLabel(`문서 청크 분석 중: ${file.name} (${chunks.length}개)`)
+        const parsedItems = await analyzeDocumentChunks(chunks)
+        const inserted = ingestDocumentAnalysisBatch(fakeDocumentId, file.name, parsedItems)
+
+        if (!inserted.insertedCount) {
+          throw new Error(`${file.name} 에서 거래로 반영할 항목을 찾지 못했습니다.`)
+        }
       }
+      setScanLabel('문서를 분석 중입니다...')
       setLedgerAiReviewContext()
       openChatPanel()
       closeUploadModal()
@@ -53,6 +84,7 @@ export default function FileUploadOverlay() {
       window.alert(`분석에 실패했습니다.\n${msg}`)
     } finally {
       setIsScanning(false)
+      setScanLabel('문서를 분석 중입니다...')
     }
   }
 
@@ -94,7 +126,7 @@ export default function FileUploadOverlay() {
 
         {/* Title */}
         <h2 className="text-3xl md:text-5xl font-black text-on-surface mb-6 tracking-tight">
-          {isScanning ? 'AI가 문서를 스캔 중입니다...' : isDragging ? '바로 여기에 놓으세요!' : '파일을 금고에 넣으세요'}
+          {isScanning ? 'AI가 업로드를 처리 중입니다...' : isDragging ? '바로 여기에 놓으세요!' : '파일을 금고에 넣으세요'}
         </h2>
 
         {/* File type badges */}
@@ -110,7 +142,7 @@ export default function FileUploadOverlay() {
         {isScanning ? (
           <div className="flex items-center gap-3 mt-2 text-on-surface-variant">
           <span className="w-4 h-4 border-2 border-primary/70 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-semibold">클라우드 비전 AI가 문서를 초정밀 분석 중입니다...</span>
+          <span className="text-sm font-semibold">{scanLabel}</span>
           </div>
         ) : !isDragging && (
           <>
@@ -126,7 +158,7 @@ export default function FileUploadOverlay() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,.pdf"
+            accept="image/*,.pdf,.csv,.xlsx,.xls"
             className="hidden"
             onChange={(e) => {
               const files = Array.from(e.target.files || [])

@@ -166,6 +166,17 @@ function ChatBubble({
   const [customCategory, setCustomCategory] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [accountInput, setAccountInput] = useState('')
+  const tx = msg.txId ? transactions.find((t) => t.id === String(msg.txId)) : null
+
+  useEffect(() => {
+    if (msg.type !== 'account_confirm') return
+    if (!selectedCategory.trim() && tx?.category) {
+      setSelectedCategory(tx.category)
+    }
+    if (!accountInput.trim() && tx?.account) {
+      setAccountInput(tx.account)
+    }
+  }, [accountInput, msg.type, selectedCategory, tx?.account, tx?.category])
 
   const submitCustomCategory = () => {
     const next = customCategory.trim()
@@ -208,7 +219,6 @@ function ChatBubble({
   }
 
   if (msg.type === 'confirm') {
-    const tx = transactions.find((t) => t.id === String(msg.txId))
     const isResolved = msg.resolved || (tx && tx.status === 'CONFIRMED')
     const options = Array.isArray(msg.options) ? msg.options : []
     return (
@@ -274,7 +284,6 @@ function ChatBubble({
   }
 
   if (msg.type === 'account_confirm') {
-    const tx = transactions.find((t) => t.id === String(msg.txId))
     const isResolved = msg.resolved || (tx?.status === 'CONFIRMED' && Boolean(tx?.account))
     const categoryOptions = Array.isArray(msg.options) ? msg.options : []
     const accountOptions = Array.isArray(msg.accountOptions) ? msg.accountOptions : []
@@ -320,7 +329,7 @@ function ChatBubble({
                     if (e.key === 'Enter') {
                       const next = customCategory.trim()
                       if (!next || !msg.txId) return
-                      onAccountConfirm(String(msg.txId), next)
+                      setSelectedCategory(next)
                       setIsCustomInputOpen(false)
                       setCustomCategory('')
                     }

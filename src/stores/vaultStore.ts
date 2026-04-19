@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { Transaction } from '../types/schema'
-import { analyzeDocumentWithGPT } from '../lib/visionAIEngine'
+import {
+  analyzeDocumentWithGPT,
+  type DocumentParseResult,
+} from '../lib/visionAIEngine'
 import {
   drainBackgroundPendingQueue,
   type BackgroundParsedItem,
@@ -68,6 +71,11 @@ type IngestBackgroundResult = {
   skippedDuplicateSourceRefs: string[]
 }
 
+type IngestDocumentBatchResult = {
+  insertedCount: number
+  insertedTxIds: string[]
+}
+
 type VaultState = {
   transactions: VaultTransaction[]
   messages: ChatMessage[]
@@ -98,6 +106,11 @@ type VaultState = {
     patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount' | 'account'>>
   ) => void
   ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => IngestBackgroundResult
+  ingestDocumentAnalysisBatch: (
+    documentId: string,
+    sourceLabel: string,
+    items: DocumentParseResult[]
+  ) => IngestDocumentBatchResult
   syncPendingFromBackgroundQueue: () => Promise<number>
   processDroppedFiles: () => Promise<void>
   analyzeDocumentWithVision: (documentId: string, file: File, fileType: string) => Promise<string>
@@ -179,6 +192,13 @@ function buildAccountOptions(knownAccounts: string[]): ConfirmOption[] {
   ]
 }
 
+function buildDocumentSummaryText(sourceLabel: string, insertedCount: number, reviewCount: number) {
+  if (reviewCount > 0) {
+    return `"${sourceLabel}"에서 ${insertedCount}건을 검토 대기 상태로 반영했어요. 우선 ${reviewCount}건만 빠르게 확인해 주세요.`
+  }
+  return `"${sourceLabel}"에서 ${insertedCount}건을 검토 대기 상태로 반영했어요.`
+}
+
 function buildPendingTxFromParsed(input: {
   merchant?: string
   date?: string | null
@@ -190,6 +210,7 @@ function buildPendingTxFromParsed(input: {
   source?: VaultTransaction['source']
   sourceRef?: string
   location?: string
+  account?: string
 }): VaultTransaction {
   const merchant = String(input.merchant || '가맹점 미확인').trim() || '가맹점 미확인'
   const normalizedCategory = normalizeCategoryLabel(input.category, merchant)
@@ -206,7 +227,7 @@ function buildPendingTxFromParsed(input: {
     sourceRef: input.sourceRef,
     date: normalizeApiDate(input.date),
     merchant,
-    account: '',
+    account: String(input.account || '').trim(),
     name: merchant,
     location: input.location || '',
     userMemo: String(input.reasoning || '').trim() || `${normalizedCategory} 자동 분류`,
@@ -634,6 +655,72 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       insertedCount: nextTxs.length,
       insertedSourceRefs: fresh.map((item) => item.sourceMessageId),
       skippedDuplicateSourceRefs,
+    }
+  },
+
+  ingestDocumentAnalysisBatch: (documentId, sourceLabel, items) => {
+    const safeItems = items.filter((item) => Number(item?.amount) > 0)
+    if (!safeItems.length) {
+      return {
+        insertedCount: 0,
+        insertedTxIds: [],
+      }
+    }
+
+    const knownAccounts = get().knownAccounts
+    const nextTxs = safeItems.map((item, index) =>
+      buildPendingTxFromParsed({
+        merchant: item.merchant,
+        date: item.date,
+        amount: item.amount,
+        category: item.category,
+        reasoning: item.reasoning,
+        confidence: item.confidence,
+        account: item.account,
+        linkedDocumentId: documentId,
+        source: 'upload',
+        sourceRef: item.sourceRef || `${documentId}:${index + 1}`,
+        location: sourceLabel,
+      })
+    )
+    const reviewTargets = nextTxs.slice(0, 3)
+
+    set((s) => ({
+      knownAccounts: Array.from(
+        new Set([
+          ...nextTxs.map((tx) => String(tx.account || '').trim()).filter(Boolean),
+          ...s.knownAccounts,
+        ])
+      ),
+      transactions: [...nextTxs, ...s.transactions],
+      reviewPinnedTxIds: [
+        ...new Set([...reviewTargets.map((tx) => tx.id), ...s.reviewPinnedTxIds]),
+      ],
+      messages: [
+        ...s.messages,
+        {
+          id: ++_id,
+          role: 'ai',
+          type: 'text',
+          text: buildDocumentSummaryText(sourceLabel, nextTxs.length, reviewTargets.length),
+          time: timeNow(),
+        },
+        ...reviewTargets.map((tx) => ({
+          id: ++_id,
+          role: 'ai' as const,
+          type: 'account_confirm' as const,
+          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역을 반영했어요. 항목과 계정을 함께 확인해 주세요.`,
+          txId: Number(tx.id),
+          options: buildConfirmOptionsForTx(tx),
+          accountOptions: buildAccountOptions([String(tx.account || ''), ...knownAccounts]),
+          time: timeNow(),
+        })),
+      ],
+    }))
+
+    return {
+      insertedCount: nextTxs.length,
+      insertedTxIds: nextTxs.map((tx) => tx.id),
     }
   },
 

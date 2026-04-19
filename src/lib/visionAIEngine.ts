@@ -7,6 +7,22 @@ export type VisionParseResult = {
   confidence: number
 }
 
+export type DocumentAnalysisChunk = {
+  documentType: 'csv' | 'xlsx' | 'pdf'
+  sourceName: string
+  chunkIndex: number
+  totalChunks: number
+  chunkText: string
+  columnHints: string[]
+  itemStart: number
+  itemEnd: number
+}
+
+export type DocumentParseResult = VisionParseResult & {
+  account?: string
+  sourceRef?: string
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -30,6 +46,30 @@ function normalizeDate(dateValue: unknown): string | null {
   const m = text.match(/(\d{4})[-./년]\s*(\d{1,2})[-./월]\s*(\d{1,2})/)
   if (!m) return null
   return `${m[1]}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[3])).padStart(2, '0')}`
+}
+
+function normalizeAmount(amountValue: unknown) {
+  if (typeof amountValue === 'number' && Number.isFinite(amountValue)) {
+    return Math.abs(amountValue)
+  }
+  const text = String(amountValue || '')
+    .replace(/[^\d.-]/g, '')
+    .trim()
+  const parsed = Number(text)
+  return Number.isFinite(parsed) ? Math.abs(parsed) : 0
+}
+
+function normalizeDocumentItem(data: any, chunk: DocumentAnalysisChunk, index: number): DocumentParseResult {
+  return {
+    merchant: String(data?.merchant || chunk.sourceName || '문서 항목').trim() || '문서 항목',
+    date: normalizeDate(data?.date),
+    amount: normalizeAmount(data?.amount),
+    category: String(data?.category || '기타').trim() || '기타',
+    account: String(data?.account || '').trim(),
+    reasoning: String(data?.reasoning || '').trim(),
+    confidence: Number(data?.confidence || 0.75),
+    sourceRef: `${chunk.sourceName}:${chunk.chunkIndex}:${chunk.itemStart + index}`,
+  }
 }
 
 export async function analyzeDocumentWithGPT(imageFile: File): Promise<VisionParseResult> {
@@ -64,5 +104,38 @@ export async function analyzeDocumentWithGPT(imageFile: File): Promise<VisionPar
     reasoning: String(data?.reasoning || '').trim(),
     confidence: Number(data?.confidence || 0.8),
   }
+}
+
+export async function analyzeDocumentChunks(chunks: DocumentAnalysisChunk[]): Promise<DocumentParseResult[]> {
+  const results: DocumentParseResult[] = []
+
+  for (const chunk of chunks) {
+    const response = await fetch('/api/analyze-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunk),
+    })
+
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const errJson = await response.json()
+        detail = errJson?.error || errJson?.detail || ''
+      } catch {
+        detail = await response.text()
+      }
+      throw new Error(`문서 분석 실패 (${response.status})${detail ? `: ${detail}` : ''}`)
+    }
+
+    const payload = await response.json()
+    const items = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.data?.items) ? payload.data.items : []
+    results.push(
+      ...items
+        .map((item: any, index: number) => normalizeDocumentItem(item, chunk, index))
+        .filter((item: DocumentParseResult) => item.amount > 0)
+    )
+  }
+
+  return results
 }
 
