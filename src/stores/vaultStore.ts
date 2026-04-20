@@ -755,6 +755,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           role: (msg.role as ChatRole) || 'ai',
           type: (msg.type as ChatType) || 'text',
           time: timeNow(),
+          createdAt: new Date().toISOString(),
         } as ChatMessage,
       ],
     }))

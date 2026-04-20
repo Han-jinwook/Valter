@@ -102,36 +102,102 @@ export default function AIChatPanel() {
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [thinkingLabel, setThinkingLabel] = useState('생각하는 중...')
-  // 채팅 메시지 스크롤 컨테이너 ref (페이지 전체 scroll 방지)
+  // 채팅 메시지 스크롤 컨테이너 ref
   const msgContainerRef = useRef(null)
   // OpenAI 대화 히스토리 (세션 내 유지, 미영속)
   const conversationRef = useRef([])
-  // 이전 메시지 수 추적 — 길이가 늘어날 때만 하단 스크롤
+  // 이전 메시지 수 추적
   const prevMsgCountRef = useRef(messages.length)
+
+  // ── KakaoTalk 스타일: 마지막 N개만 렌더, 스크롤 위로 시 이전 대화 로드 ──────
+  const INITIAL_LOAD = 30
+  const LOAD_MORE = 20
+  const [displayCount, setDisplayCount] = useState(INITIAL_LOAD)
+  const prevScrollHeightRef = useRef(null)
+  const loadingMoreRef = useRef(false)
+
+  // 헤더에 표시할 날짜 (현재 뷰포트 최상단 메시지 기준)
+  const [headerDate, setHeaderDate] = useState(() => {
+    const last = messages[messages.length - 1]
+    return last ? formatDateLabel(last.createdAt || new Date().toISOString()) : ''
+  })
+
+  // 마운트 시점 메시지 ID 기록 → 기존 메시지는 애니메이션 없이 표시
+  const initialMsgIdsRef = useRef(null)
+  if (initialMsgIdsRef.current === null) {
+    initialMsgIdsRef.current = new Set(messages.map((m) => m.id))
+  }
+
+  const totalMsgCount = messages.length
+  const sliceStart = Math.max(0, totalMsgCount - displayCount)
+  const visibleMessages = messages.slice(sliceStart)
+  const hasOlderMessages = sliceStart > 0
 
   const hoveredTx = hoveredTxId ? transactions.find((t) => t.id === hoveredTxId) : null
 
-  // 채팅 컨테이너 내부만 스크롤 (scrollIntoView는 페이지 전체를 움직이므로 사용 안 함)
+  // 채팅 하단 스크롤
   const scrollChatToBottom = useCallback((smooth = true) => {
     const el = msgContainerRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' })
   }, [])
 
-  // 초기 마운트 시 채팅창 하단으로 즉시 이동
+  // 뷰포트 최상단 메시지의 날짜를 헤더에 반영
+  const syncHeaderDate = useCallback(() => {
+    const container = msgContainerRef.current
+    if (!container) return
+    const els = container.querySelectorAll('[data-msg-date]')
+    const containerTop = container.getBoundingClientRect().top
+    for (const el of els) {
+      if (el.getBoundingClientRect().top >= containerTop) {
+        const d = el.getAttribute('data-msg-date')
+        if (d) setHeaderDate(d)
+        return
+      }
+    }
+  }, [])
+
+  // 초기 마운트: 즉시 하단으로 이동 후 날짜 동기화
   useEffect(() => {
     scrollChatToBottom(false)
+    // 렌더 후 날짜 반영
+    requestAnimationFrame(() => syncHeaderDate())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 새 메시지 추가 or 생각 중일 때만 하단 스크롤
+  // load more 후 스크롤 위치 복원
+  useEffect(() => {
+    if (loadingMoreRef.current && prevScrollHeightRef.current !== null) {
+      const el = msgContainerRef.current
+      if (el) el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+      prevScrollHeightRef.current = null
+      loadingMoreRef.current = false
+      syncHeaderDate()
+    }
+  }, [displayCount, syncHeaderDate])
+
+  // 새 메시지 추가 시 하단 스크롤 (load more 중엔 제외)
   useEffect(() => {
     const isNewMessage = messages.length > prevMsgCountRef.current
     prevMsgCountRef.current = messages.length
-    if (isNewMessage || isThinking) {
-      scrollChatToBottom(true)
+    if (!loadingMoreRef.current && (isNewMessage || isThinking)) {
+      scrollChatToBottom(isNewMessage)
     }
   }, [messages, isThinking, scrollChatToBottom])
+
+  // 스크롤 이벤트: 이전 대화 로드 + 헤더 날짜 업데이트
+  const handleMsgScroll = useCallback(() => {
+    const el = msgContainerRef.current
+    if (!el) return
+    // 헤더 날짜 실시간 업데이트
+    syncHeaderDate()
+    // 맨 위 근처면 이전 대화 추가 로드
+    if (!loadingMoreRef.current && hasOlderMessages && el.scrollTop < 60) {
+      prevScrollHeightRef.current = el.scrollHeight
+      loadingMoreRef.current = true
+      setDisplayCount((prev) => Math.min(prev + LOAD_MORE, totalMsgCount))
+    }
+  }, [hasOlderMessages, totalMsgCount, syncHeaderDate])
 
   // ─── 클라이언트 사이드 Tool 실행 ───────────────────────────────────────────
   const executeTool = useCallback(
@@ -343,57 +409,76 @@ export default function AIChatPanel() {
   return (
     <aside className="w-[360px] shrink-0 self-start lg:sticky lg:top-24 max-h-[calc(100vh-7rem)] bg-surface-container-lowest/80 backdrop-blur-xl rounded-xl shadow-2xl flex flex-col overflow-hidden hidden lg:flex">
       {/* Header */}
-      <div className="p-4 border-b border-surface-container">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-lg shadow-primary/20">
-              <span className="material-symbols-outlined text-white text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-                smart_toy
-              </span>
+      <div className="px-4 py-3 border-b border-surface-container">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-md shadow-primary/20">
+                <span className="material-symbols-outlined text-white text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  smart_toy
+                </span>
+              </div>
+              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-surface-container-lowest rounded-full ${isProcessing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`} />
             </div>
-            <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-surface-container-lowest rounded-full ${isProcessing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`} />
+            <h2 className="text-[15px] font-bold text-on-surface">금고 AI비서</h2>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-on-surface">금고 AI</h2>
-            <p className="text-[11px] text-on-surface-variant font-medium">
-              {isProcessing ? '분석 중...' : '재무 비서 · 온라인'}
-            </p>
-          </div>
+          {/* 현재 뷰포트 최상단 메시지 날짜 */}
+          {headerDate && (
+            <span className="text-[10px] text-outline/80 font-medium shrink-0">{headerDate}</span>
+          )}
         </div>
       </div>
 
       {/* Messages */}
-      <div ref={msgContainerRef} className="flex-grow overflow-y-auto p-4 space-y-3 text-sm custom-scrollbar">
-        {messages.map((msg) => (
-          <ChatBubble
-            key={msg.id}
-            msg={msg}
-            transactions={transactions}
-            knownAccounts={knownAccounts}
-            onConfirm={confirmTransaction}
-            onAccountConfirm={confirmTransactionAccount}
-            onCompleteReview={completeTransactionReview}
-            onAcknowledge={acknowledgeAlert}
-            onLedgerResolve={resolveLedgerReview}
-          />
-        ))}
+      <div
+        ref={msgContainerRef}
+        onScroll={handleMsgScroll}
+        className="flex-grow overflow-y-auto px-3 py-2 space-y-1 text-sm custom-scrollbar"
+      >
+        {/* 위쪽 이전 대화 로드 표시 */}
+        {hasOlderMessages && (
+          <div className="text-center py-1">
+            <span className="text-[10px] text-outline/50">위로 스크롤하면 이전 대화를 불러옵니다</span>
+          </div>
+        )}
+        {visibleMessages.map((msg) => {
+          const animate = !initialMsgIdsRef.current.has(msg.id)
+          const msgDate = formatDateLabel(msg.createdAt || new Date().toISOString())
+          return (
+            <div
+              key={msg.id}
+              data-msg-date={msgDate}
+              className={animate ? 'animate-fade-in' : ''}
+            >
+              <ChatBubble
+                msg={msg}
+                transactions={transactions}
+                knownAccounts={knownAccounts}
+                onConfirm={confirmTransaction}
+                onAccountConfirm={confirmTransactionAccount}
+                onCompleteReview={completeTransactionReview}
+                onAcknowledge={acknowledgeAlert}
+                onLedgerResolve={resolveLedgerReview}
+              />
+            </div>
+          )
+        })}
 
-        {/* AI Thinking 버블 (로컬 상태, 미영속) */}
+        {/* AI Thinking 버블 */}
         {isThinking && (
-          <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
-            <div className="bg-surface-container-low p-4 rounded-2xl rounded-tl-none">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          <div className="flex items-end gap-1.5 max-w-[94%] animate-fade-in">
+            <div className="bg-surface-container-low px-3 py-2 rounded-2xl rounded-tl-none">
+              <div className="flex items-center gap-2">
+                <div className="flex gap-0.5">
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
                 <span className="text-on-surface-variant text-xs font-medium">{thinkingLabel}</span>
               </div>
             </div>
           </div>
         )}
-
       </div>
 
       {/* Hover Context Chip */}
@@ -412,29 +497,45 @@ export default function AIChatPanel() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="p-4 pt-2.5">
-        <div className="relative flex items-center bg-surface-container-low rounded-2xl p-2 px-4 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+      {/* Input — 금고 테마 */}
+      <div className="p-3 pt-2">
+        <div className="flex items-center bg-[#0f172a] rounded-2xl px-3 py-1 border border-[#FFD700]/30 shadow-[0_0_12px_rgba(255,215,0,0.08)] focus-within:border-[#FFD700]/60 focus-within:shadow-[0_0_20px_rgba(255,215,0,0.18)] transition-all">
+          <span className="material-symbols-outlined text-[#FFD700]/50 text-[16px] mr-2 shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSubmit()
-            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
             disabled={isThinking}
-            className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm py-2 placeholder:text-outline-variant disabled:opacity-50"
-            placeholder={isThinking ? thinkingLabel : '검색, 질문, 기록 등 무엇이든 지시하세요...'}
+            className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm py-2 text-white/90 placeholder:text-white/50 disabled:opacity-50"
+            placeholder={isThinking ? thinkingLabel : '금고에 무엇이든 지시하세요...'}
           />
           <button
             onClick={handleSubmit}
-            className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-105 transition-transform active:scale-95 shrink-0"
+            className="w-8 h-8 bg-gradient-to-br from-[#FFD700] to-[#F59E0B] text-[#1a1109] rounded-xl flex items-center justify-center shadow-lg shadow-[#FFD700]/30 hover:scale-105 transition-transform active:scale-95 shrink-0"
           >
-            <span className="material-symbols-outlined text-xl">send</span>
+            <span className="material-symbols-outlined text-[17px]">send</span>
           </button>
         </div>
       </div>
     </aside>
+  )
+}
+
+// ── 날짜 레이블 포맷 (createdAt ISO → "4월 13일 (월)") ──────────────────────
+function formatDateLabel(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  const days = ['일', '월', '화', '수', '목', '금', '토']
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`
+}
+
+// ── 버블 옆 타임스탬프 ────────────────────────────────────────────────────────
+function TimeStamp({ time }) {
+  return (
+    <div className="shrink-0 self-end pb-0.5">
+      <span className="text-[10px] text-outline leading-tight whitespace-nowrap">{time}</span>
+    </div>
   )
 }
 
@@ -484,32 +585,33 @@ function ChatBubble({
 
   if (msg.type === 'processing') {
     return (
-      <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
-        <div className="bg-surface-container-low p-4 rounded-2xl rounded-tl-none">
-          <div className="flex items-center gap-3">
-            <div className="flex gap-1">
-              <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="flex items-end gap-1.5 max-w-[94%]">
+        <div className="bg-surface-container-low px-3 py-2 rounded-2xl rounded-tl-none">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5">
+              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
             <span className="text-on-surface-variant text-xs">영수증을 분석하고 있습니다...</span>
           </div>
         </div>
+        <TimeStamp time={msg.time} dateLabel="" />
       </div>
     )
   }
 
   if (msg.type === 'result') {
     return (
-      <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
-        <div className="bg-primary/5 border border-primary/10 p-4 rounded-2xl rounded-tl-none space-y-2">
+      <div className="flex items-end gap-1.5 max-w-[94%]">
+        <div className="bg-primary/5 border border-primary/10 px-3.5 py-2.5 rounded-2xl rounded-tl-none space-y-1.5">
           <p className="text-on-surface leading-relaxed font-semibold">{msg.text}</p>
           <div className="pt-1 border-t border-primary/10 flex justify-between items-center text-[11px]">
             <span className="text-on-surface-variant italic">{msg.subtitle}</span>
             <span className="text-primary font-bold tabular-nums">소모: {msg.credit} C</span>
           </div>
         </div>
-        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
+        <TimeStamp time={msg.time} dateLabel="" />
       </div>
     )
   }
@@ -518,9 +620,12 @@ function ChatBubble({
     const isResolved = msg.resolved || (tx && tx.status === 'CONFIRMED')
     const options = Array.isArray(msg.options) ? msg.options : []
     return (
-      <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
-        <div className="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-tl-none leading-relaxed">
+      <div className="flex flex-col gap-1 max-w-[94%]">
+        <div className="flex items-end gap-1.5">
+        <div className="bg-surface-container-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed">
           {msg.text}
+        </div>
+        <TimeStamp time={msg.time} dateLabel="" />
         </div>
         {!isResolved ? (
           <>
@@ -574,7 +679,6 @@ function ChatBubble({
             분류 완료
           </div>
         )}
-        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
       </div>
     )
   }
@@ -584,9 +688,12 @@ function ChatBubble({
     const categoryOptions = Array.isArray(msg.options) ? msg.options : []
     const canSubmit = Boolean(selectedCategory.trim() && accountInput.trim() && msg.txId)
     return (
-      <div className="flex flex-col gap-1 max-w-[88%] animate-fade-in">
-        <div className="bg-surface-container-low text-on-surface p-3 rounded-2xl rounded-tl-none leading-relaxed">
+      <div className="flex flex-col gap-1 max-w-[94%]">
+        <div className="flex items-end gap-1.5">
+        <div className="bg-surface-container-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed">
           {msg.text}
+        </div>
+        <TimeStamp time={msg.time} dateLabel="" />
         </div>
         {!isResolved ? (
           <>
@@ -699,22 +806,24 @@ function ChatBubble({
             항목/계정 반영 완료
           </div>
         )}
-        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
       </div>
     )
   }
 
   if (msg.type === 'alert') {
     return (
-      <div className="flex flex-col gap-1 max-w-[90%] animate-fade-in">
+      <div className="flex flex-col gap-1 max-w-[94%]">
+        <div className="flex items-end gap-1.5">
         <div
-          className={`p-4 rounded-2xl rounded-tl-none leading-relaxed border ${
+          className={`px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed border ${
             msg.resolved
               ? 'bg-surface-container-low border-surface-container'
               : 'bg-gradient-to-r from-[#FFD700] via-[#FFEA70] to-[#F1C40F] border-[#FFD700]/80 alert-gold-glow'
           }`}
         >
           <p className={`${msg.resolved ? 'text-on-surface' : 'text-[#121212]'} font-semibold`}>{msg.text}</p>
+        </div>
+        <TimeStamp time={msg.time} dateLabel="" />
         </div>
         {!msg.resolved && (
           <div className="flex flex-wrap gap-2 mt-1 ml-1">
@@ -729,16 +838,18 @@ function ChatBubble({
             ))}
           </div>
         )}
-        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
       </div>
     )
   }
 
   if (msg.type === 'ledger_review') {
     return (
-      <div className="flex flex-col gap-1 max-w-[90%] animate-fade-in">
-        <div className="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-tl-none leading-relaxed border border-primary/15">
+      <div className="flex flex-col gap-1 max-w-[94%]">
+        <div className="flex items-end gap-1.5">
+        <div className="bg-surface-container-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed border border-primary/15">
           <p className="font-semibold">{msg.text}</p>
+        </div>
+        <TimeStamp time={msg.time} dateLabel="" />
         </div>
         {!msg.resolved && (
           <div className="flex flex-wrap gap-2 mt-1 ml-1">
@@ -759,28 +870,27 @@ function ChatBubble({
             챗봇에서 분류 반영 완료
           </div>
         )}
-        <span className="text-[10px] text-outline ml-1">{msg.time}</span>
       </div>
     )
   }
 
   if (msg.role === 'user') {
     return (
-      <div className="flex flex-col gap-1 items-end ml-auto max-w-[85%] animate-fade-in">
-        <div className="bg-primary text-white p-4 rounded-2xl rounded-tr-none shadow-md shadow-primary/20 leading-relaxed">
+      <div className="flex items-end justify-end gap-1.5 ml-auto max-w-[94%]">
+        <TimeStamp time={msg.time} />
+        <div className="bg-primary text-white px-3.5 py-2 rounded-2xl rounded-tr-none shadow-md shadow-primary/20 leading-relaxed">
           {msg.text}
         </div>
-        <span className="text-[10px] text-outline mr-1">{msg.time}</span>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-1 max-w-[85%] animate-fade-in">
-      <div className="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-tl-none leading-relaxed">
+    <div className="flex items-end gap-1.5 max-w-[94%]">
+      <div className="bg-surface-container-low text-on-surface px-3.5 py-2 rounded-2xl rounded-tl-none leading-relaxed">
         {msg.text}
       </div>
-      <span className="text-[10px] text-outline ml-1">{msg.time}</span>
+      <TimeStamp time={msg.time} dateLabel="" />
     </div>
   )
 }
