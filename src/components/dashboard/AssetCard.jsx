@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useUIStore } from '../../stores/uiStore'
+import { useAssetStats, formatKRW, getCurrentMonthLabel } from '../../selectors/vaultSelectors'
 
 const vaultPrompts = [
   { emoji: '🧾', text: '오늘 먹은 점심 영수증 보관하기' },
@@ -15,6 +16,26 @@ export default function AssetCard({ isExpanded = true }) {
   const { openUpload, restoreTrinityMode } = useUIStore()
   const [idx, setIdx] = useState(0)
   const [hovered, setHovered] = useState(false)
+
+  const {
+    hasData,
+    cumulativeBalance,
+    thisMonthFlow,
+    thisMonthIncome,
+    thisMonthExpense,
+    expenseChangeRate,
+  } = useAssetStats()
+
+  // 전월 대비 지출 증감 배지
+  const trendBadge = (() => {
+    if (expenseChangeRate === null) return null
+    const sign = expenseChangeRate >= 0 ? '+' : ''
+    return {
+      label: `전월 대비 지출 ${sign}${expenseChangeRate.toFixed(1)}%`,
+      icon: expenseChangeRate >= 0 ? 'trending_up' : 'trending_down',
+      colorClass: expenseChangeRate >= 0 ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary',
+    }
+  })()
 
   useEffect(() => {
     if (hovered) return
@@ -67,48 +88,60 @@ export default function AssetCard({ isExpanded = true }) {
       <div className="relative z-10">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-bold text-outline tracking-widest uppercase">나의 순자산</span>
+          <span className="text-xs font-bold text-outline tracking-widest uppercase">누적 가용 자금</span>
           <span className="px-2 py-0.5 bg-primary-container text-on-primary-container text-[10px] rounded-full font-bold">
-            2026년 4월 기준
+            {getCurrentMonthLabel()}
           </span>
         </div>
 
         {/* Main Balance */}
-        <h1 className="text-4xl font-extrabold text-on-surface tracking-tight tabular-nums">₩8,000,000</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-          <div className="text-on-surface-variant font-semibold">
-            총 자산 <span className="tabular-nums text-on-surface">₩12,450,000</span>
-          </div>
-          <span className="text-outline">|</span>
-          <div className="text-on-surface-variant font-semibold">
-            총 부채 <span className="tabular-nums text-secondary">₩4,450,000</span>
-          </div>
-          <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold flex items-center gap-1">
-            <span className="material-symbols-outlined text-sm">trending_up</span>
-            전월 대비 +12.5%
-          </span>
-        </div>
+        {hasData ? (
+          <>
+            <h1 className={`text-4xl font-extrabold tracking-tight tabular-nums ${cumulativeBalance >= 0 ? 'text-on-surface' : 'text-error'}`}>
+              {cumulativeBalance < 0 ? '-' : ''}{formatKRW(cumulativeBalance)}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <div className="text-on-surface-variant font-semibold">
+                이번 달 수입 <span className="tabular-nums text-primary">{formatKRW(thisMonthIncome)}</span>
+              </div>
+              <span className="text-outline">|</span>
+              <div className="text-on-surface-variant font-semibold">
+                이번 달 지출 <span className="tabular-nums text-secondary">{formatKRW(thisMonthExpense)}</span>
+              </div>
+              {trendBadge && (
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 ${trendBadge.colorClass}`}>
+                  <span className="material-symbols-outlined text-sm">{trendBadge.icon}</span>
+                  {trendBadge.label}
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 className="text-4xl font-extrabold text-outline/40 tracking-tight">₩ — — —</h1>
+            <p className="mt-2 text-sm text-outline">영수증을 던져넣으면 금고가 살아납니다!</p>
+          </>
+        )}
 
         {/* Sub stats */}
         <div className="mt-8 grid grid-cols-2 gap-4">
           <div className="bg-surface-container-low p-4 rounded-xl">
-            <div className="text-[10px] text-outline font-bold mb-1">지난달 금고 결산</div>
-            <div className="text-lg font-bold tabular-nums text-primary">+₩1,250,000</div>
+            <div className="text-[10px] text-outline font-bold mb-1">이번 달 금고 결산</div>
+            {hasData ? (
+              <div className={`text-lg font-bold tabular-nums ${thisMonthFlow >= 0 ? 'text-primary' : 'text-error'}`}>
+                {thisMonthFlow >= 0 ? '+' : '-'}{formatKRW(thisMonthFlow)}
+              </div>
+            ) : (
+              <div className="text-lg font-bold text-outline/40">—</div>
+            )}
           </div>
           <div className="bg-surface-container-low p-4 rounded-xl">
-            <div className="text-[10px] text-outline font-bold mb-1">가용 현금</div>
-            <div className="text-lg font-bold tabular-nums">₩3,500,000</div>
-          </div>
-        </div>
-
-        {/* Savings progress */}
-        <div className="mt-6">
-          <div className="flex justify-between items-end mb-2">
-            <div className="text-[10px] text-outline font-bold">저축 목표: 새 iPhone (85%)</div>
-            <div className="text-xs font-bold text-primary tabular-nums">₩1,275,000 / ₩1,500,000</div>
-          </div>
-          <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">
-            <div className="bg-primary h-full rounded-full shadow-sm transition-all duration-700" style={{ width: '85%' }} />
+            <div className="text-[10px] text-outline font-bold mb-1">이번 달 총 지출</div>
+            {hasData ? (
+              <div className="text-lg font-bold tabular-nums">{formatKRW(thisMonthExpense)}</div>
+            ) : (
+              <div className="text-lg font-bold text-outline/40">—</div>
+            )}
           </div>
         </div>
       </div>

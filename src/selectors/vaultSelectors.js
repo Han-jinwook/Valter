@@ -200,3 +200,81 @@ export function selectSankeyModel(transactions = [], options = {}) {
   }
 }
 
+// ─── AssetCard 전용 집계 hook ────────────────────────────────────────────────
+
+import { useMemo } from 'react'
+import { useVaultStore } from '../stores/vaultStore'
+
+function parseTransactionDate(dateStr) {
+  const m = String(dateStr || '').match(/(\d{4})[.\-\/](\d{2})[.\-\/](\d{2})/)
+  if (!m) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+}
+
+/**
+ * 4개 재무 지표 집계 hook (AssetCard 전용)
+ * - cumulativeBalance: 전체 수입 - 전체 지출 (누적 가용 자금)
+ * - thisMonthFlow:     이번 달 수입 - 이번 달 지출
+ * - thisMonthExpense:  이번 달 지출 총액
+ * - expenseChangeRate: (이번 달 지출 - 지난달 지출) / 지난달 지출 * 100 (null = 지난달 없음)
+ * TRANSFER 타입은 모든 집계에서 제외.
+ */
+export function useAssetStats() {
+  const transactions = useVaultStore((s) => s.transactions)
+
+  return useMemo(() => {
+    const now = new Date()
+    const thisYear = now.getFullYear()
+    const thisMonth = now.getMonth()
+    const lastMonthYear = thisMonth === 0 ? thisYear - 1 : thisYear
+    const lastMonth = thisMonth === 0 ? 11 : thisMonth - 1
+
+    let totalIncome = 0
+    let totalExpense = 0
+    let thisMonthIncome = 0
+    let thisMonthExpense = 0
+    let lastMonthExpense = 0
+
+    for (const tx of transactions) {
+      if (tx.type === 'TRANSFER') continue
+      const d = parseTransactionDate(tx.date)
+      if (!d) continue
+      const amt = Number(tx.amount) || 0
+
+      if (tx.type === 'INCOME') totalIncome += amt
+      else if (tx.type === 'EXPENSE') totalExpense += Math.abs(amt)
+
+      if (d.getFullYear() === thisYear && d.getMonth() === thisMonth) {
+        if (tx.type === 'INCOME') thisMonthIncome += amt
+        else if (tx.type === 'EXPENSE') thisMonthExpense += Math.abs(amt)
+      }
+      if (d.getFullYear() === lastMonthYear && d.getMonth() === lastMonth) {
+        if (tx.type === 'EXPENSE') lastMonthExpense += Math.abs(amt)
+      }
+    }
+
+    return {
+      hasData: transactions.length > 0,
+      cumulativeBalance: totalIncome - totalExpense,
+      thisMonthFlow: thisMonthIncome - thisMonthExpense,
+      thisMonthIncome,
+      thisMonthExpense,
+      expenseChangeRate:
+        lastMonthExpense > 0
+          ? ((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100
+          : null,
+    }
+  }, [transactions])
+}
+
+/** 원화 포맷. 예: ₩1,234,567 */
+export function formatKRW(amount) {
+  if (typeof amount !== 'number' || isNaN(amount)) return '—'
+  return `₩${Math.abs(amount).toLocaleString('ko-KR')}`
+}
+
+/** "2026년 4월 기준" 형태 현재 날짜 레이블 */
+export function getCurrentMonthLabel() {
+  const now = new Date()
+  return `${now.getFullYear()}년 ${now.getMonth() + 1}월 기준`
+}

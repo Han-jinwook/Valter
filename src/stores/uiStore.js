@@ -65,4 +65,5 @@ export const useUIStore = create((set) => ({
   aiFilter: null,
   setAiFilter: (filter) => set({ aiFilter: filter }),
   clearAiFilter: () => set({ aiFilter: null }),
+
 }))

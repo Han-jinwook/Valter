@@ -1,17 +1,10 @@
-대화형 AI 재무 비서 구축 - Function Calling 기반 오케스트레이터 완성
+Phase 1: AssetCard 실데이터 연결 - 누적 가용 자금 실시간 집계
 
-- chat-assistant.js: query_ledger / update_ledger / analyze_category_spending Tool 스키마 정의
-  excludeCategories, type, sortBy, account 파라미터로 복합 필터링 지원
-  analyze_category_spending: 통계/분석 전용 Tool (LLM 수학 할루시네이션 원천 차단)
-- AIChatPanel: 클라이언트 사이드 멀티턴 실행 루프 구현
-  query_ledger: JS 날짜 정규화 + 다중 필터 로컬 검색
-  analyze_category_spending: JS Array.reduce 카테고리별 합산 (GPT는 결과만 읽음)
-  update_ledger: updateTransactionInline 호출로 원장 즉시 리렌더
-  WINNER_CATEGORY 태그 파싱으로 aiFilter 자동 동기화
-  모든 입력을 executeAiChat으로 직통 (tier1 라우터 제거)
-- TransactionTable: aiFilter 기반 원장 필터링 + AI 배너 + 초기화 버튼 추가
-  AccountDropdown: createPortal + fixed 포지셔닝으로 overflow-hidden 탈출
-- uiStore: aiFilter / setAiFilter / clearAiFilter 상태 추가
-- vaultStore: addChatMessage 액션 추가
-- netlify.toml: /api/chat-assistant 라우팅 추가
-- TopNavBar: 디버그 로그 오버레이 제거
+- vaultSelectors.js: useAssetStats hook 추가
+  누적 가용 자금 / 이번 달 금고 결산 / 이번 달 총 지출 / 전월 대비 지출 증감률
+  TRANSFER 타입 집계 제외, useMemo 성능 최적화
+  formatKRW / getCurrentMonthLabel 유틸 추가
+- AssetCard.jsx: 하드코딩 숫자 -> useAssetStats 실시간 집계값으로 전면 교체
+  데이터 없을 때 Fallback UI 처리
+  지출 증가 시 빨강 / 감소 시 파랑 배지 자동 전환
+  날짜 레이블 현재 날짜 자동 반영
