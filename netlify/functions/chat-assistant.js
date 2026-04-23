@@ -15,6 +15,28 @@ function json(statusCode, body) {
   }
 }
 
+/** `add_ledger_entry` 전용 — 지출/수입 각각 이 명칭만 허용(임의 문구·신규 카테고리 금지) */
+const ADD_LEDGER_EXPENSE_CATEGORIES = [
+  '식비',
+  '교통/차량',
+  '쇼핑/뷰티',
+  '주거/통신',
+  '문화/여가',
+  '건강/병원',
+  '기타 지출',
+]
+const ADD_LEDGER_INCOME_CATEGORIES = ['급여', '부수입', '금융 수입', '기타 수입']
+const ADD_LEDGER_ALL_CATEGORIES = [...ADD_LEDGER_EXPENSE_CATEGORIES, ...ADD_LEDGER_INCOME_CATEGORIES]
+
+function addLedgerCategoryEnumBlock() {
+  return `【add_ledger_entry — 카테고리 고정 Enum(반드시 이 명칭만)】
+- type=EXPENSE(지출)일 때 **category** 는 다음 중 **정확히 하나**만: ${ADD_LEDGER_EXPENSE_CATEGORIES.join(', ')}
+- type=INCOME(수입)일 때 **category** 는 다음 중 **정확히 하나**만: ${ADD_LEDGER_INCOME_CATEGORIES.join(', ')}
+[카테고리 매핑 룰] 가계부에 새로 등록할 때 유저의 지출/수입 내용을 해석해 **위 지정 분류 중 한 가지**로만 택해라. **절대** 임의의 카테고리 문구를 새로 만들지 마라. 애매하거나 끼는 분류가 없으면 type에 맞게 **'기타 지출'** 또는 **'기타 수입'**을 써라.
+(참고) query_ledger·기존 원장에 나온 옛 카테고리명은 **조회·필터**에 쓰일 뿐이며, **add_ledger_entry 로 새로 쌓는 건** 항상 위 Enum만 쓴다.`
+
+}
+
 function loadApiKey() {
   const envKey = process.env.OPENAI_API_KEY
   if (envKey) return envKey
@@ -42,8 +64,34 @@ function buildSystemPrompt() {
 오늘 날짜: ${dateStr} (${yearMonth}). 기간 추론 시 이 날짜를 절대 기준으로 삼아라.
 "이번 달" = ${yearMonth}, "지난 달" = ${prevYearMonth}.
 
+${addLedgerCategoryEnumBlock()}
+
+【원장(가계부) 새 거래 등록 — Slot-filling / 스마트 역질문】
+- 유저가 "기록해줘/넣어줘/원장에 써줘/가계부에 올려줘/썼어 기록" 등 **새 거래를 원장에 반영**하려는 의도일 때, **아래 [필수 4요소]를 모두 충족(또는 합리적으로 도출)할 수 있을 때에만** \`add_ledger_entry\` 를 호출해라.
+- 4요소를 모두 갖췄거나(또는 역질문으로 보충) 기록 의도가 유지되면 **add_ledger_entry** 로 즉시 등록하고, tool summary 기준으로 **"[memo/사용처]에 ₩…을 지출(또는 수입)하신 내역을 가계부에 기록했습니다."** 한 문장으로 보고해라.
+- **금액·날짜·내용 중 하나라도 없으면** add_ledger_entry를 **절대** 호출하지 말고, 부족한 것만 **다정·짧게** 역질문해라.
+- **카테고리는 별도 항목**이지만(아래 4번), [스마트 역질문 룰]에 따라 묻지 않고 Enum으로 매핑해도 되는 경우가 있다.
+- 등록 대기 중에는 **절대** query_ledger / analyze_category_spending / update_ledger / render_visualization 을 "등록 대용"으로 쓰지 마라.
+
+**[필수 4요소 확인]**
+1) **내용** — 어디서·무엇을(가맹점·용도·수입이면 사유)이 드러날 것. ("많이 썼다"만 있으면 불충분)
+2) **정확한 금액** — 숫자(원). "대략/적당히"만으로는 불충분.
+3) **날짜** — "오늘/어제/4월 10일" 등 (상대일은 **위의 오늘 날짜** 기준)
+4) **category** — 위 【add_ledger_entry — 카테고리 고정 Enum】의 **type(EXPENSE/INCOME)에 맞는 명칭 정확히 하나**. 임의 신규 분류·비Enum 문자열 금지.
+
+**[스마트 역질문 룰]**
+- **금액 / 날짜 / 내용** 중 **어느 하나라도** 빠졌거나 모호하면 → **add_ledger_entry를 호출하지 말고** 역질문. (이 세 가지는 추측으로 채우지 마라. 단 날짜는 유저가 "오늘"만 말한 경우 **오늘 날짜**로 YYYY-MM-DD 환산은 허용.)
+- **카테고리 추론:** 국밥·편의점·커피·배달 식사 등 ➔ **식비**, 택시·지하철·버스·주차 등 ➔ **교통/차량**, 온라인 쇼핑·화장품 등 ➔ **쇼핑/뷰티**처럼 **유저 말에서 Enum으로 넣을 분류가 확실하면 카테고리를 굳이 묻지 말고** 곧바로 tool의 category에 넣어라(수입이면 "급여/부수입/금융 수입" 등 맥락에 맞게).
+- **카테고리만** 발화가 너무 애매해 **지출·수입 각 Enum 중 어디에 넣을지 확신할 수 없을 때에만** 예를 들어 "이 지출은 어떤 카테고리(식비, 쇼핑/뷰티, 교통/차량 등)로 맞을까요?" / 수입이면 "(급여, 부수입 …)" 식으로 **똑똑하게 한 번만** 물어라. (여전히 애매하면 type에 맞게 **'기타 지출'** 또는 **'기타 수입'** — 상단 Enum 룰과 동일.)
+
+【등록·역질문 대화 예시】
+(예시 A) 유저: "편의점에서 우유랑 샌드위치 샀어, 7,500원" → (날짜 없음) **도구 호출 없이** "어느 날 쓰셨는지 알려주시겠어요? (오늘/어제/날짜)" — 카테고리는 **식비**로 확정 가능하므로 묻지 않음.
+(예시 B) 유저: "돈 많이 썼어" → **도구 없이** 내용·금액·날짜(필요 시 카테고리)를 **짧고 다정하게** 요청.
+(예시 C) 유저: "어제 3천원 썼어" → (내용 없음) **도구 없이** "어디/무엇에 쓰셨는지 알려주시겠어요?"
+(예시 D) 유저: "현금 5천원, 어제, 뭔가 샀다" → 내용·카테고리 모호 → 내용·또는 카테고리를 위 스마트 룰대로 **필요한 것만** 묻기.
+
 【핵심 행동 규칙】
-1. 거래 내역 조회·수정 요청에는 반드시 도구(function)를 먼저 호출하고, 실제 데이터를 확인한 뒤 답변해라.
+1. **조회·수정·분석·시각화** 요청(위 등록 케이스가 아닐 때)에는 반드시 도구(function)를 먼저 호출하고, 실제 데이터를 확인한 뒤 답변해라. 등록 의도인데 **[필수 4요소]가** 미비하면(스마트 추론으로도 못 채울 때) 규칙 1을 **적용하지 말고** add_ledger_entry·다른 tool 호출을 하지 않는다.
 2. 절대로 데이터를 지어내거나 추측하지 마라.
 3. query_ledger 실행 후 개별 거래 내역이나 중간 계산 과정을 채팅창에 나열하지 마라.
    → 반드시 아래 형식으로만 답변해라:
@@ -198,6 +246,33 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'add_ledger_entry',
+      description:
+        '필수 4요소: 내용(memo)·정확한 금액·날짜(YYYY-MM-DD)·category(Enum)가 모두 확보된 뒤에만 호출. 내용/금액/날짜가 비면 도구 호출 금지. category는 발화로 **확실히** 추론 가능하면 묻지 말고 Enum에 매핑하고, **분류만** 애매할 때에만 역질문 후 반영. 로컬 가계부에 1건 추가. 임의 분류명 금지·애매 시 기타 지출/기타 수입.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['EXPENSE', 'INCOME'],
+            description: 'EXPENSE=지출, INCOME=수입. category는 이 type에 맞는 Enum만.',
+          },
+          category: {
+            type: 'string',
+            enum: ADD_LEDGER_ALL_CATEGORIES,
+            description: `type=EXPENSE: ${ADD_LEDGER_EXPENSE_CATEGORIES.join(' | ')}. type=INCOME: ${ADD_LEDGER_INCOME_CATEGORIES.join(' | ')}. 철자·띄어쓰기 동일해야 함.`,
+          },
+          amount: { type: 'number', description: '원 단위 양수. 절댓값이 기록됨(지출/수입은 type으로 구분).' },
+          date: { type: 'string', description: '거래일 YYYY-MM-DD (오늘/어제 등은 이 날짜로 환산)' },
+          memo: { type: 'string', description: '어디서/무엇에 썼는지·입금 사유(가맹점·용도). 거래 제목·적요로 쓰인다.' },
+        },
+        required: ['type', 'category', 'amount', 'date', 'memo'],
+      },
+    },
+  },
 ]
 
 // ─── 대화 길이 제한 (토큰 절약) ──────────────────────────────────────────────
@@ -243,13 +318,19 @@ export const handler = async (event) => {
         role: 'system',
         content: `【현재 유저의 원장 데이터 현황】
 - 등록된 계정(결제수단) 목록: ${dbContext.accounts?.length ? dbContext.accounts.join(', ') : '없음'}
-- 등록된 카테고리 목록: ${dbContext.categories?.length ? dbContext.categories.join(', ') : '없음'}
+- 등록된 카테고리 목록(기존 원장에 쌓인 **과거/혼재** 분류, 조회·필터용): ${dbContext.categories?.length ? dbContext.categories.join(', ') : '없음'}
 - 총 거래 건수: ${dbContext.totalTransactions ?? 0}건
 - 기간: ${dbContext.dateRange ?? '없음'}
 
-query_ledger 호출 시 위 목록에 있는 계정·카테고리 이름을 그대로 사용해라.
+query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색/필터에 활용해도 좋다.
 유저가 "현금"이라고 하면 계정 목록에서 일치하는 항목을 찾아 account 파라미터로 전달해라.
-유저가 "식비"라고 하면 카테고리 목록에서 일치하는 항목을 찾아 category 파라미터로 전달해라.`,
+유저가 기존 원장 키워드로 "식비" 등을 말하면 category 필터는 위 목록과 맞출 수 있다.
+
+**add_ledger_entry (신규 등록):** [필수 4요소] 내용(memo)·금액·날짜·category(Enum). 금액/날짜/내용이 비면 **도구 호출 금지**·역질문. category는 발화로 확실히 추론되면 **물어보지 말고** Enum에 지정, **지출/수입 분류가 유독 애매할 때만** 짧게 되물어볼 것.
+**add_ledger_entry의 category 파라미터** — 아래 **고정 Enum만** (옛 원장 키워드는 참고용):
+- EXPENSE: ${ADD_LEDGER_EXPENSE_CATEGORIES.join(', ')}
+- INCOME: ${ADD_LEDGER_INCOME_CATEGORIES.join(', ')}
+[매핑] Enum 문자열 **정확히 하나**. 임의 신규 문구 금지. 끝까지 애매하면 '기타 지출' / '기타 수입'.`,
       }
     : null
 

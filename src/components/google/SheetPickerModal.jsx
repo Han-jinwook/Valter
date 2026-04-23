@@ -72,7 +72,7 @@ export default function SheetPickerModal({ isOpen, onClose }) {
       })
 
       const docId = `gsheet-${sheet.id}-${Date.now()}`
-      const result = ingestDocumentAnalysisBatch(docId, sheet.name, items)
+      const result = await ingestDocumentAnalysisBatch(docId, sheet.name, items)
 
       if (!result.insertedCount) {
         throw new Error('원장에 추가할 거래 항목을 찾지 못했습니다. 날짜·금액 열이 있는지 확인하세요.')

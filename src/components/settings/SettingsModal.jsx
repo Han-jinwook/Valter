@@ -10,7 +10,7 @@ import {
   MAX_DATED_BACKUPS,
 } from '../../lib/googleDriveSync'
 import { clearStoredGmailAuth } from '../../lib/gmailSync'
-import { buildFullBackupSnapshot } from '../../lib/backupSnapshot'
+import { buildFullBackupSnapshot, buildLocalKvSnapshot } from '../../lib/backupSnapshot'
 import { writeLocalVaultSnapshot } from '../../lib/localVaultPersistence'
 import { useAssetStore } from '../../stores/assetStore'
 
@@ -130,7 +130,7 @@ export default function SettingsModal() {
         // 구버전 백업: 황금자산 필드 없음 → 부자산은 비움(원장만 복원)
         await useAssetStore.getState().hydrateFromSnapshot([])
       }
-      await writeLocalVaultSnapshot(buildFullBackupSnapshot())
+      await writeLocalVaultSnapshot(buildLocalKvSnapshot())
       setHasSnapshot(true)
       setDriveBackupState('success', `"${label}"으로 복원 완료`, true)
     } catch (error) {

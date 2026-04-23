@@ -9,6 +9,13 @@ import {
   drainBackgroundPendingQueue,
   type BackgroundParsedItem,
 } from '../lib/gmailSync'
+import { flushLocalVaultSnapshotToKv } from '../lib/flushLocalVaultSnapshot'
+import {
+  deleteLedgerLine,
+  putLedgerLine,
+  putLedgerLinesBatch,
+  writeAllLedgerLines,
+} from '../lib/localVaultPersistence'
 
 function timeNow() {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
@@ -119,19 +126,35 @@ type VaultState = {
   askLedgerReview: (tx: VaultTransaction) => void
   resolveLedgerReview: (messageId: number, ledgerTxId: number, category: string) => void
   clearLedgerDecision: () => void
-  confirmTransaction: (txId: string, category: string) => void
-  confirmTransactionAccount: (txId: string, account: string) => void
-  completeTransactionReview: (txId: string, category: string, account: string) => void
+  confirmTransaction: (txId: string, category: string) => Promise<void>
+  confirmTransactionAccount: (txId: string, account: string) => Promise<void>
+  completeTransactionReview: (txId: string, category: string, account: string) => Promise<void>
   updateTransactionInline: (
     txId: string,
     patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount' | 'account'>>
-  ) => void
-  ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => IngestBackgroundResult
+  ) => Promise<void>
+  /** IndexedDB `ledger_lines` 1행 추가 + Zustand (원장/요약 갱신) */
+  addLine: (tx: VaultTransaction) => Promise<void>
+  addLines: (txs: VaultTransaction[]) => Promise<void>
+  updateLine: (txId: string, patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount' | 'account' | 'status' | 'type' | 'date' | 'merchant'>>) => Promise<void>
+  deleteLine: (txId: string) => Promise<void>
+  /** 지기 AI `add_ledger_entry` — 원장에 수동 거래 1건 추가 */
+  addLedgerEntry: (input: {
+    type: 'EXPENSE' | 'INCOME'
+    category: string
+    amount: number
+    date: string
+    memo: string
+  }) => Promise<
+    | { success: true; txId: string; summary: { date: string; amount: number; category: string; memo: string; type: 'EXPENSE' | 'INCOME' } }
+    | { success: false; error: string }
+  >
+  ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => Promise<IngestBackgroundResult>
   ingestDocumentAnalysisBatch: (
     documentId: string,
     sourceLabel: string,
     items: DocumentParseResult[]
-  ) => IngestDocumentBatchResult
+  ) => Promise<IngestDocumentBatchResult>
   addChatMessage: (msg: Omit<Partial<ChatMessage>, 'id' | 'time'> & { text: string }) => void
   addAssetChatMessage: (msg: Omit<Partial<ChatMessage>, 'id' | 'time'> & { text: string }) => void
   exportBackupSnapshot: () => VaultBackupSnapshot
@@ -139,6 +162,31 @@ type VaultState = {
   syncPendingFromBackgroundQueue: () => Promise<number>
   processDroppedFiles: () => Promise<void>
   analyzeDocumentWithVision: (documentId: string, file: File, fileType: string) => Promise<string>
+}
+
+/** 지기 `add_ledger_entry`가 넘기는 고정 분류(서버 프롬프트·툴 Enum과 동일) */
+const KEEPER_LEDGER_EXPENSE_CATEGORIES = [
+  '식비',
+  '교통/차량',
+  '쇼핑/뷰티',
+  '주거/통신',
+  '문화/여가',
+  '건강/병원',
+  '기타 지출',
+] as const
+const KEEPER_LEDGER_INCOME_CATEGORIES = ['급여', '부수입', '금융 수입', '기타 수입'] as const
+
+const KEEPER_EXPENSE_SET = new Set<string>(KEEPER_LEDGER_EXPENSE_CATEGORIES)
+const KEEPER_INCOME_SET = new Set<string>(KEEPER_LEDGER_INCOME_CATEGORIES)
+
+function normalizeKeeperAddLedgerCategory(
+  type: 'EXPENSE' | 'INCOME',
+  category: string,
+): string {
+  const raw = String(category || '').trim()
+  const allow = type === 'INCOME' ? KEEPER_INCOME_SET : KEEPER_EXPENSE_SET
+  if (allow.has(raw)) return raw
+  return type === 'INCOME' ? '기타 수입' : '기타 지출'
 }
 
 function normalizeApiDate(dateText?: string | null) {
@@ -277,6 +325,49 @@ function buildPendingTxFromParsed(input: {
     iconBg: isTax ? '#ffe8c2' : '#ffd3dc',
     iconColor: isTax ? '#875100' : '#7d2438',
     amount: signedAmount || -1,
+  }
+}
+
+/** 지기 AI `add_ledger_entry` — 유저가 직접 말로 확정한 수입/지출 1건 */
+function buildVaultTxFromAiLedgerEntry(input: {
+  type: 'EXPENSE' | 'INCOME'
+  category: string
+  amount: number
+  date: string
+  memo: string
+}): VaultTransaction {
+  const amountAbs = Math.abs(Number(input.amount))
+  if (!Number.isFinite(amountAbs) || amountAbs <= 0) {
+    throw new Error('INVALID_AMOUNT')
+  }
+  const txType: Transaction['type'] = input.type === 'INCOME' ? 'INCOME' : 'EXPENSE'
+  const signed = txType === 'INCOME' ? amountAbs : -amountAbs
+  const memo = String(input.memo || '').trim() || '메모 없음'
+  const categoryNorm = normalizeKeeperAddLedgerCategory(
+    input.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+    String(input.category || '').trim(),
+  )
+  const isTax = /세금|국세청|공과금/.test(`${categoryNorm} ${memo}`)
+
+  return {
+    id: String(++_id),
+    createdAt: new Date().toISOString(),
+    source: 'manual',
+    date: normalizeApiDate(input.date),
+    merchant: memo.length > 120 ? `${memo.slice(0, 117)}…` : memo,
+    name: memo.length > 120 ? `${memo.slice(0, 117)}…` : memo,
+    location: '',
+    userMemo: `지기 AI 등록 · ${categoryNorm}`,
+    category: categoryNorm,
+    type: txType,
+    aiConfidence: 1,
+    status: 'CONFIRMED',
+    isInternal: false,
+    linkedDocumentId: null,
+    icon: txType === 'INCOME' ? 'payments' : isTax ? 'account_balance' : 'receipt_long',
+    iconBg: txType === 'INCOME' ? '#6e9fff' : isTax ? '#ffe8c2' : '#ffd3dc',
+    iconColor: txType === 'INCOME' ? '#002150' : isTax ? '#875100' : '#7d2438',
+    amount: signed,
   }
 }
 
@@ -440,6 +531,39 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   setHoveredTx: (id) => set({ hoveredTxId: id }),
   setDragging: (v) => set({ isDragging: v }),
 
+  addLine: async (tx) => {
+    await putLedgerLine(tx)
+    set((s) => ({ transactions: [tx, ...s.transactions] }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
+  },
+
+  addLines: async (txs) => {
+    if (!txs.length) return
+    await putLedgerLinesBatch(txs)
+    set((s) => ({ transactions: [...txs, ...s.transactions] }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
+  },
+
+  updateLine: async (txId, patch) => {
+    const t = get().transactions.find((x) => x.id === txId)
+    if (!t) return
+    const next: VaultTransaction = { ...t, ...patch }
+    if (patch.name !== undefined) {
+      next.merchant = patch.name
+    }
+    await putLedgerLine(next)
+    set((s) => ({
+      transactions: s.transactions.map((x) => (x.id === txId ? next : x)),
+    }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
+  },
+
+  deleteLine: async (txId) => {
+    await deleteLedgerLine(txId)
+    set((s) => ({ transactions: s.transactions.filter((x) => x.id !== txId) }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
+  },
+
   simulateEmailLanding: () => {
     const unresolved = get().messages.find((m) => m.type === 'alert' && !m.resolved)
     if (unresolved) return
@@ -551,16 +675,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   clearLedgerDecision: () => set({ lastLedgerDecision: null }),
 
-  confirmTransaction: (txId, category) => {
+  confirmTransaction: async (txId, category) => {
     const tx = get().transactions.find((t) => t.id === txId)
     if (!tx || tx.status === 'CONFIRMED') return
     const nextCategory = String(category || '').trim()
     if (!nextCategory) return
-
+    const next: VaultTransaction = { ...tx, status: 'CONFIRMED', category: nextCategory }
+    await putLedgerLine(next)
     set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id === txId ? { ...t, status: 'CONFIRMED', category: nextCategory } : t
-      ),
+      transactions: s.transactions.map((t) => (t.id === txId ? next : t)),
       reviewPinnedTxIds: s.reviewPinnedTxIds.includes(txId)
         ? s.reviewPinnedTxIds
         : [txId, ...s.reviewPinnedTxIds],
@@ -570,40 +693,44 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         ),
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
   },
 
-  confirmTransactionAccount: (txId, account) => {
+  confirmTransactionAccount: async (txId, account) => {
     const nextAccount = String(account || '').trim()
     if (!nextAccount) return
+    const tx = get().transactions.find((t) => t.id === txId)
+    if (!tx) return
+    const next: VaultTransaction = { ...tx, account: nextAccount }
+    await putLedgerLine(next)
     set((s) => ({
       knownAccounts: Array.from(new Set([nextAccount, ...s.knownAccounts])),
-      transactions: s.transactions.map((t) =>
-        t.id === txId ? { ...t, account: nextAccount } : t
-      ),
+      transactions: s.transactions.map((t) => (t.id === txId ? next : t)),
       messages: [
         ...s.messages.map((m) =>
           m.type === 'account_confirm' && m.txId === Number(txId) ? { ...m, resolved: true } : m
         ),
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
   },
 
-  completeTransactionReview: (txId, category, account) => {
+  completeTransactionReview: async (txId, category, account) => {
     const nextCategory = String(category || '').trim()
     const nextAccount = String(account || '').trim()
     if (!nextCategory || !nextAccount) return
+    const tx = get().transactions.find((t) => t.id === txId)
+    if (!tx) return
+    const next: VaultTransaction = {
+      ...tx,
+      status: 'CONFIRMED',
+      category: nextCategory,
+      account: nextAccount,
+    }
+    await putLedgerLine(next)
     set((s) => ({
       knownAccounts: Array.from(new Set([nextAccount, ...s.knownAccounts])),
-      transactions: s.transactions.map((t) =>
-        t.id === txId
-          ? {
-              ...t,
-              status: 'CONFIRMED',
-              category: nextCategory,
-              account: nextAccount,
-            }
-          : t
-      ),
+      transactions: s.transactions.map((t) => (t.id === txId ? next : t)),
       reviewPinnedTxIds: s.reviewPinnedTxIds.includes(txId)
         ? s.reviewPinnedTxIds
         : [txId, ...s.reviewPinnedTxIds],
@@ -613,26 +740,51 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           : m
       ),
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
   },
 
-  updateTransactionInline: (txId, patch) => {
+  updateTransactionInline: async (txId, patch) => {
+    const t = get().transactions.find((x) => x.id === txId)
+    if (!t) return
+    const next: VaultTransaction = { ...t, ...patch }
+    if (patch.name !== undefined) {
+      next.merchant = patch.name
+    }
+    await putLedgerLine(next)
     set((s) => ({
       knownAccounts:
         patch.account && String(patch.account).trim()
           ? Array.from(new Set([String(patch.account).trim(), ...s.knownAccounts]))
           : s.knownAccounts,
-      transactions: s.transactions.map((t) => {
-        if (t.id !== txId) return t
-        const next = { ...t, ...patch }
-        if (patch.name !== undefined) {
-          next.merchant = patch.name
-        }
-        return next
-      }),
+      transactions: s.transactions.map((x) => (x.id === txId ? next : x)),
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
   },
 
-  ingestBackgroundParsedEntries: (items) => {
+  addLedgerEntry: async (input) => {
+    try {
+      const newTx = buildVaultTxFromAiLedgerEntry(input)
+      await get().addLine(newTx)
+      return {
+        success: true,
+        txId: newTx.id,
+        summary: {
+          date: newTx.date,
+          amount: newTx.amount,
+          category: newTx.category,
+          memo: newTx.merchant,
+          type: newTx.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+        },
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === 'INVALID_AMOUNT') {
+        return { success: false, error: '금액은 0보다 큰 숫자여야 합니다.' }
+      }
+      return { success: false, error: e instanceof Error ? e.message : '원장에 추가하지 못했습니다.' }
+    }
+  },
+
+  ingestBackgroundParsedEntries: async (items) => {
     if (!items.length) {
       return {
         insertedCount: 0,
@@ -671,6 +823,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     const knownAccounts = get().knownAccounts
     const reviewTargets = nextTxs.slice(0, 3)
 
+    await putLedgerLinesBatch(nextTxs)
     set((s) => ({
       transactions: [...nextTxs, ...s.transactions],
       messages: [
@@ -687,6 +840,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         })),
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
     console.info('[GmailDebug][Store] inserted tx ids:', nextTxs.map((tx) => tx.id))
     return {
       insertedCount: nextTxs.length,
@@ -695,7 +849,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  ingestDocumentAnalysisBatch: (documentId, sourceLabel, items) => {
+  ingestDocumentAnalysisBatch: async (documentId, sourceLabel, items) => {
     const safeItems = items.filter((item) => Number(item?.amount) > 0)
     if (!safeItems.length) {
       return {
@@ -722,6 +876,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     )
     const reviewTargets = nextTxs.slice(0, 3)
 
+    await putLedgerLinesBatch(nextTxs)
     set((s) => ({
       knownAccounts: Array.from(
         new Set([
@@ -754,6 +909,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         })),
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
 
     return {
       insertedCount: nextTxs.length,
@@ -829,13 +985,17 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       isDragging: false,
       isProcessing: false,
     })
+    void writeAllLedgerLines(transactions).catch((err) => {
+      console.warn('[Vault] writeAllLedgerLines after restore', err)
+    })
   },
 
   syncPendingFromBackgroundQueue: async () => {
     const queued = await drainBackgroundPendingQueue()
     console.info('[GmailDebug][Store] drain queue size:', queued.length)
     if (!queued.length) return 0
-    return get().ingestBackgroundParsedEntries(queued).insertedCount
+    const result = await get().ingestBackgroundParsedEntries(queued)
+    return result.insertedCount
   },
 
   processDroppedFiles: async () => {
@@ -911,6 +1071,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       },
     ]
 
+    await putLedgerLinesBatch(newTxs)
     set((s) => ({
       isProcessing: false,
       transactions: [...newTxs, ...s.transactions],
@@ -941,6 +1102,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         },
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
   },
 
   analyzeDocumentWithVision: async (documentId, file, fileType) => {
@@ -956,6 +1118,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       location: '',
     })
 
+    await putLedgerLine(newTx)
     set((s) => ({
       transactions: [newTx, ...s.transactions],
       messages: [
@@ -976,6 +1139,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         },
       ],
     }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
 
     return newTx.id
   },

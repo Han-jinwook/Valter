@@ -92,10 +92,10 @@ export default function TransactionTable() {
       const tx = transactions.find((item) => item.id === txId)
       if (tx) {
         const signed = tx.amount > 0 ? Math.abs(numeric) : -Math.abs(numeric)
-        updateTransactionInline(txId, { amount: signed })
+        void updateTransactionInline(txId, { amount: signed })
       }
     } else {
-      updateTransactionInline(txId, { [field]: nextRaw })
+      void updateTransactionInline(txId, { [field]: nextRaw })
     }
     setEditingCell(null)
   }

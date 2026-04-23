@@ -11,7 +11,7 @@ import {
   setDigestHourPreference,
   validateGmailReadonlyAccess,
 } from '../../lib/gmailSync'
-import { buildFullBackupSnapshot } from '../../lib/backupSnapshot'
+import { buildFullBackupSnapshot, buildLocalKvSnapshot } from '../../lib/backupSnapshot'
 import { disconnectDriveBackupVault, uploadRotatedBackup } from '../../lib/googleDriveSync'
 import { clearLocalVaultSnapshot, writeLocalVaultSnapshot } from '../../lib/localVaultPersistence'
 import { useAssetStore } from '../../stores/assetStore'
@@ -359,7 +359,7 @@ export default function TopNavBar() {
         clearGmailSyncTestData(false),
         clearStoredGmailAuth(),
       ])
-      await writeLocalVaultSnapshot(buildFullBackupSnapshot())
+      await writeLocalVaultSnapshot(buildLocalKvSnapshot())
       if (settled) return
       settled = true
       setLastGmailSyncAt(null)

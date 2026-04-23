@@ -12,8 +12,9 @@ import OnboardingPage from './pages/OnboardingPage'
 import FileUploadOverlay from './components/upload/FileUploadOverlay'
 import CreditChargeModal from './components/credit/CreditChargeModal'
 import { getDriveBackupStatus, uploadRotatedBackup } from './lib/googleDriveSync'
-import { buildFullBackupSnapshot } from './lib/backupSnapshot'
+import { buildFullBackupSnapshot, buildLocalKvSnapshot } from './lib/backupSnapshot'
 import { readLocalVaultSnapshot, writeLocalVaultSnapshot } from './lib/localVaultPersistence'
+import { resolveTransactionsForLoad } from './lib/ledgerBootstrap'
 import { useUIStore } from './stores/uiStore'
 import { useAssetStore } from './stores/assetStore'
 import { useVaultStore } from './stores/vaultStore'
@@ -69,7 +70,7 @@ function AppShell() {
   const doFlushBackup = async (snapshot) => {
     pendingSnapshotRef.current = null
     try {
-      await writeLocalVaultSnapshot(snapshot)
+      await writeLocalVaultSnapshot(buildLocalKvSnapshot())
     } catch (error) {
       console.warn('[VaultLocal] persist failed', error)
     }
@@ -143,15 +144,16 @@ function AppShell() {
     const bootstrap = async () => {
       try {
         const localSnapshot = await readLocalVaultSnapshot()
+        const transactions = await resolveTransactionsForLoad(localSnapshot)
         if (!cancelled) {
           if (localSnapshot?.version) {
-            useVaultStore.getState().restoreFromBackupSnapshot(localSnapshot)
+            useVaultStore.getState().restoreFromBackupSnapshot({ ...localSnapshot, transactions })
             await useAssetStore.getState().rehydrateAfterVaultSnapshotRead(localSnapshot.goldenAssetLines)
           } else {
             useVaultStore.getState().restoreFromBackupSnapshot({
               version: 1,
               exportedAt: new Date().toISOString(),
-              transactions: [],
+              transactions,
               messages: [],
               assetMessages: [],
               knownAccounts: [],
@@ -256,14 +258,14 @@ function AppShell() {
       }, ttlMs)
     }
 
-    const onSwMessage = (event) => {
+    const onSwMessage = async (event) => {
       const type = event?.data?.type
       if (type === 'GMAIL_SYNC_PARSED') {
         const payload = event?.data?.payload
         const items = Array.isArray(payload) ? payload : payload?.items || []
         const incomingMeta = Array.isArray(payload?.meta) ? payload.meta : []
         console.info('[GmailDebug][App] SW parsed event items:', items.length, items.map((x) => x?.sourceMessageId))
-        const result = ingestBackgroundParsedEntries(items)
+        const result = await ingestBackgroundParsedEntries(items)
         const insertedSourceRefs = new Set(result?.insertedSourceRefs || [])
         const mergedMeta = incomingMeta.map((meta) => ({
           ...meta,

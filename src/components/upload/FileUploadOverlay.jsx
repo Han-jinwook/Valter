@@ -75,7 +75,7 @@ export default function FileUploadOverlay() {
 
         setScanLabel(`문서 청크 분석 중: ${file.name} (${chunks.length}개)`)
         const parsedItems = await analyzeDocumentChunks(chunks)
-        const inserted = ingestDocumentAnalysisBatch(fakeDocumentId, file.name, parsedItems)
+        const inserted = await ingestDocumentAnalysisBatch(fakeDocumentId, file.name, parsedItems)
 
         if (!inserted.insertedCount) {
           throw new Error(`${file.name} 에서 거래로 반영할 항목을 찾지 못했습니다.`)

@@ -94,6 +94,7 @@ export default function AIChatPanel() {
     resolveLedgerReview,
     addChatMessage,
     updateTransactionInline,
+    addLedgerEntry,
   } = useVaultStore()
   const isChartMode = useUIStore((s) => s.isChartMode)
   const openVizMode = useUIStore((s) => s.openVizMode)
@@ -216,7 +217,7 @@ export default function AIChatPanel() {
 
   // ─── 클라이언트 사이드 Tool 실행 ───────────────────────────────────────────
   const executeTool = useCallback(
-    (toolName, args) => {
+    async (toolName, args) => {
       if (toolName === 'query_ledger') {
         const result = runQueryLedger(transactions, args)
         const sum = Math.abs(result.transactions.reduce((s, t) => s + t.amount, 0))
@@ -293,8 +294,21 @@ export default function AIChatPanel() {
         const { txId, category } = args
         const target = transactions.find((t) => t.id === String(txId))
         if (!target) return { success: false, error: `ID ${txId}인 거래를 찾을 수 없습니다.` }
-        updateTransactionInline(String(txId), { category: String(category) })
+        await updateTransactionInline(String(txId), { category: String(category) })
         return { success: true, txId, previousCategory: target.category, newCategory: category }
+      }
+
+      if (toolName === 'add_ledger_entry') {
+        const type = args.type === 'INCOME' ? 'INCOME' : 'EXPENSE'
+        const out = await addLedgerEntry({
+          type,
+          category: String(args.category ?? '').trim() || '기타',
+          amount: Number(args.amount),
+          date: String(args.date ?? '').trim(),
+          memo: String(args.memo ?? '').trim(),
+        })
+        if (!out.success) return out
+        return { success: true, ...out, note: '클라이언트에 원장이 반영되었습니다. summary로 사용자에게 보고하라.' }
       }
 
       if (toolName === 'render_visualization') {
@@ -310,7 +324,7 @@ export default function AIChatPanel() {
 
       return { error: `알 수 없는 도구: ${toolName}` }
     },
-    [transactions, updateTransactionInline, setAiFilter, openVizMode, setVizFilter, clearVizFilter],
+    [transactions, updateTransactionInline, addLedgerEntry, setAiFilter, openVizMode, setVizFilter, clearVizFilter],
   )
 
   // ─── AI 채팅 멀티턴 루프 ───────────────────────────────────────────────────
@@ -364,9 +378,10 @@ export default function AIChatPanel() {
 
               if (toolName === 'query_ledger') setThinkingLabel('금고를 뒤져보는 중...')
               else if (toolName === 'update_ledger') setThinkingLabel('원장을 수정하는 중...')
+              else if (toolName === 'add_ledger_entry') setThinkingLabel('가계부에 기록하는 중...')
               else if (toolName === 'render_visualization') setThinkingLabel('시각화를 여는 중...')
 
-              const toolResult = executeTool(toolName, args)
+              const toolResult = await executeTool(toolName, args)
 
               conversationRef.current.push({
                 role: 'tool',
