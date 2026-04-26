@@ -8,6 +8,7 @@ import IsolatedChatComposer from './IsolatedChatComposer'
 import { MessageWithActionLinks } from './MessageWithActionLinks'
 import { parseYmdOrToday } from '../../lib/ymdDate'
 import { normalizeCategoryForType } from '../../lib/goldenAssetCategories'
+import { resolveApiUrl } from '../../lib/resolveApiUrl'
 
 const CTA_TAG = /\s*\[CTA:keeper\]\s*/i
 
@@ -288,7 +289,7 @@ export default function AssetChatPanel() {
 
           const assetContext = buildAssetContextForApi()
 
-          const res = await fetch('/api/chat-assistant-assets', {
+          const res = await fetch(resolveApiUrl('/api/chat-assistant-assets'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

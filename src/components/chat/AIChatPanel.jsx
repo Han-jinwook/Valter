@@ -4,6 +4,7 @@ import { MessageWithActionLinks } from './MessageWithActionLinks'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useUIStore } from '../../stores/uiStore'
 import { isConsumptiveLedgerExpense } from '../../lib/ledgerCategoryPolicy'
+import { resolveApiUrl } from '../../lib/resolveApiUrl'
 import { CHAT_PANEL_ASIDE_LAYOUT } from './chatPanelAsideLayout'
 
 // 날짜 문자열 → YYYY-MM-DD 정규화 (다양한 포맷 대응)
@@ -360,7 +361,7 @@ export default function AIChatPanel() {
               : '데이터 없음',
           }
 
-          const res = await fetch('/api/chat-assistant', {
+          const res = await fetch(resolveApiUrl('/api/chat-assistant'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: conversationRef.current, dbContext }),

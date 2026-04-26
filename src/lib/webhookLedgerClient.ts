@@ -1,4 +1,5 @@
 import { getOrCreateWebhookIdentity } from './webhookIdentity'
+import { resolveApiUrl } from './resolveApiUrl'
 
 type RegisterResult =
   | { ok: true; already: boolean }
@@ -26,7 +27,7 @@ type PullResult =
 
 export async function registerWebhookAuthPair(): Promise<RegisterResult> {
   const { userId, token } = getOrCreateWebhookIdentity()
-  const res = await fetch('/api/webhook-auth-register', {
+  const res = await fetch(resolveApiUrl('/api/webhook-auth-register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, token }),
@@ -44,7 +45,7 @@ export async function registerWebhookAuthPair(): Promise<RegisterResult> {
 export async function pullLedgerWebhookInbox(): Promise<PullResult> {
   const { userId, token } = getOrCreateWebhookIdentity()
   const q = new URLSearchParams({ userId, token })
-  const res = await fetch(`/api/webhook-ledger-pull?${q.toString()}`, { method: 'GET' })
+  const res = await fetch(resolveApiUrl(`/api/webhook-ledger-pull?${q.toString()}`), { method: 'GET' })
   const data = (await res.json().catch(() => ({}))) as { ok?: boolean; items?: PullItem[]; error?: string }
   if (!res.ok) {
     return { ok: false, error: String(data.error || res.statusText || 'pull_failed'), status: res.status }

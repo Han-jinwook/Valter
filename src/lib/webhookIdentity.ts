@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './resolveApiUrl'
+
 const LS_USER = 'vaulter.webhookUserId'
 const LS_TOKEN = 'vaulter.webhookToken'
 
@@ -32,11 +34,11 @@ export function getWebhookBaseUrl(): string {
 export function buildWebhookPostUrl(userId: string, token: string): string {
   const base = getWebhookBaseUrl()
   const q = new URLSearchParams({ userId, token })
-  return `${base}/api/webhook-receipt?${q.toString()}`
+  return `${base}${resolveApiUrl('/api/webhook-receipt')}?${q.toString()}`
 }
 
 export function buildLedgerPullUrl(userId: string, token: string): string {
   const base = getWebhookBaseUrl()
   const q = new URLSearchParams({ userId, token })
-  return `${base}/api/webhook-ledger-pull?${q.toString()}`
+  return `${base}${resolveApiUrl('/api/webhook-ledger-pull')}?${q.toString()}`
 }

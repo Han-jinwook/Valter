@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './resolveApiUrl'
+
 export type VisionParseResult = {
   merchant: string
   date: string | null
@@ -76,7 +78,7 @@ export async function analyzeDocumentWithGPT(imageFile: File): Promise<VisionPar
   const imageBase64 = await fileToBase64(imageFile)
   const mimeType = imageFile.type || 'image/jpeg'
 
-  const response = await fetch('/api/analyze-receipt', {
+  const response = await fetch(resolveApiUrl('/api/analyze-receipt'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageBase64, mimeType, fileName: imageFile.name || '' }),
@@ -114,7 +116,7 @@ export async function analyzeDocumentChunks(
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
-    const response = await fetch('/api/analyze-document', {
+    const response = await fetch(resolveApiUrl('/api/analyze-document'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(chunk),

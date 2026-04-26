@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { Link } from 'react-router-dom'
 import { useVaultStore } from '../../stores/vaultStore'
 import { buildBudgetContextPayload } from '../../lib/budgetContextForApi'
+import { resolveApiUrl } from '../../lib/resolveApiUrl'
 import { CHAT_PANEL_ASIDE_LAYOUT } from './chatPanelAsideLayout'
 import IsolatedChatComposer from './IsolatedChatComposer'
 import { MessageWithActionLinks } from './MessageWithActionLinks'
@@ -177,7 +178,7 @@ export default function BudgetChatPanel() {
         while (true) {
           if (++safetyBreaker > 8) throw new Error('응답 루프가 너무 깁니다.')
 
-          const res = await fetch('/api/chat-assistant-budget', {
+          const res = await fetch(resolveApiUrl('/api/chat-assistant-budget'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -5,6 +5,13 @@ const KEY_PROCESSED_IDS = 'gmail_processed_ids'
 const KEY_PENDING_QUEUE = 'gmail_pending_queue'
 const KEY_DIGEST_HOUR = 'gmail_digest_hour'
 
+/** Netlify: `/api` 별칭이 404일 때 — SW 는 Vite env 가 없으므로 로컬만 /api, 나머지는 Functions 직접 */
+function apiPathAnalyzeEmail() {
+  const h = (typeof self !== 'undefined' && self.location && self.location.hostname) || ''
+  if (h === 'localhost' || h === '127.0.0.1') return '/api/analyze-email-receipt'
+  return '/.netlify/functions/analyze-email-receipt'
+}
+
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1)
@@ -204,7 +211,7 @@ async function runGmailSync() {
       return
     }
 
-    const parseRes = await fetch('/api/analyze-email-receipt', {
+    const parseRes = await fetch(apiPathAnalyzeEmail(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

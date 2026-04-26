@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './resolveApiUrl'
+
 const LS_HASH = 'vaulter_vault_pin_hash'
 const SESS = 'vaulter_vault_unlocked'
 
@@ -67,7 +69,7 @@ export function setVaultUnlockedThisSession() {
 export async function verifyVaultPinOnServer(pin) {
   const storedHash = getStoredPinHash()
   if (!storedHash) return { ok: false, error: 'PIN이 설정되지 않았습니다.' }
-  const res = await fetch('/api/vault-verify-pin', {
+  const res = await fetch(resolveApiUrl('/api/vault-verify-pin'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pin, storedHash }),

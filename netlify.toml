@@ -2,6 +2,10 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# 클라이언트가 /api/ 리다이렉트 대신 `/.netlify/functions/...` 를 쓰게 함 (src/lib/resolveApiUrl.js)
+[build.environment]
+  VITE_NETLIFY = "1"
+
 [dev]
   command = "npm run dev"
   targetPort = 5173

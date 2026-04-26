@@ -52,6 +52,8 @@ function buildEvent(req, pathOnly) {
 export function localNetlifyApi() {
   return {
     name: 'local-netlify-api',
+    /** @netlify/vite-plugin 의 NetlifyDev 미들웨어보다 **먼저** 등록해 `/api/*` 를 여기서 처리(안 그러면 404) */
+    enforce: 'pre',
     configureServer(server) {
       const root = server.config.root
       server.middlewares.use(async (req, res, next) => {
