@@ -65,7 +65,7 @@ type LedgerDecision = {
 export type VaultTransaction = Transaction & {
   id: string
   createdAt: string
-  source: 'upload' | 'gmail' | 'manual'
+  source: 'upload' | 'gmail' | 'manual' | 'webhook'
   sourceRef?: string
   name: string
   location: string
@@ -80,6 +80,12 @@ type IngestBackgroundResult = {
   insertedCount: number
   insertedSourceRefs: string[]
   skippedDuplicateSourceRefs: string[]
+}
+
+type IngestWebhookInboxResult = {
+  insertedCount: number
+  insertedKeys: string[]
+  skippedDuplicateKeys: string[]
 }
 
 type IngestDocumentBatchResult = {
@@ -170,6 +176,8 @@ type VaultState = {
     | { success: false; error: string }
   >
   ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => Promise<IngestBackgroundResult>
+  /** Netlify Blobs 대기 큐 → 로컬 원장 (sourceRef: webhook:… 로 중복 제거) */
+  ingestWebhookInboxItems: (items: { key: string; parsed: { type: string; category: string; amount: number; date: string; title: string } }[]) => Promise<IngestWebhookInboxResult>
   ingestDocumentAnalysisBatch: (
     documentId: string,
     sourceLabel: string,
@@ -195,6 +203,9 @@ const KEEPER_LEDGER_EXPENSE_CATEGORIES = [
   '주거/통신',
   '문화/여가',
   '건강/병원',
+  '이자/금융수수료',
+  '카드대금 결제',
+  '대출 상환',
   '기타 지출',
 ] as const
 const KEEPER_LEDGER_INCOME_CATEGORIES = ['급여', '부수입', '금융 수입', '기타 수입'] as const
@@ -395,6 +406,29 @@ function buildVaultTxFromAiLedgerEntry(input: {
     iconBg: txType === 'INCOME' ? '#6e9fff' : isTax ? '#ffe8c2' : '#ffd3dc',
     iconColor: txType === 'INCOME' ? '#002150' : isTax ? '#875100' : '#7d2438',
     amount: signed,
+  }
+}
+
+function buildVaultTxFromWebhookInbox(input: {
+  queueKey: string
+  type: 'EXPENSE' | 'INCOME'
+  category: string
+  amount: number
+  date: string
+  title: string
+}): VaultTransaction {
+  const base = buildVaultTxFromAiLedgerEntry({
+    type: input.type,
+    category: input.category,
+    amount: input.amount,
+    date: input.date,
+    memo: input.title,
+  })
+  return {
+    ...base,
+    source: 'webhook',
+    sourceRef: `webhook:${input.queueKey}`,
+    userMemo: `지기 Webhook · ${base.category}`,
   }
 }
 
@@ -876,6 +910,58 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       insertedCount: nextTxs.length,
       insertedSourceRefs: fresh.map((item) => item.sourceMessageId),
       skippedDuplicateSourceRefs,
+    }
+  },
+
+  ingestWebhookInboxItems: async (items) => {
+    if (!items.length) {
+      return { insertedCount: 0, insertedKeys: [], skippedDuplicateKeys: [] }
+    }
+    const current = get().transactions
+    const known = new Set(current.map((tx) => tx.sourceRef).filter((r): r is string => Boolean(r)))
+    const fresh = items.filter((it) => {
+      const ref = `webhook:${it.key}`
+      return !known.has(ref)
+    })
+    const skippedDuplicateKeys = items
+      .filter((it) => known.has(`webhook:${it.key}`))
+      .map((it) => it.key)
+    if (!fresh.length) {
+      return { insertedCount: 0, insertedKeys: [], skippedDuplicateKeys }
+    }
+    const nextTxs: VaultTransaction[] = []
+    for (const it of fresh) {
+      const p = it.parsed
+      const t = String(p.type || '')
+        .toUpperCase() === 'INCOME'
+        ? 'INCOME'
+        : 'EXPENSE'
+      try {
+        const tx = buildVaultTxFromWebhookInbox({
+          queueKey: it.key,
+          type: t,
+          category: p.category,
+          amount: p.amount,
+          date: p.date,
+          title: p.title,
+        })
+        nextTxs.push(tx)
+      } catch {
+        // INVALID_AMOUNT 등은 건너뜀
+      }
+    }
+    if (!nextTxs.length) {
+      return { insertedCount: 0, insertedKeys: [], skippedDuplicateKeys }
+    }
+    await putLedgerLinesBatch(nextTxs)
+    set((s) => ({
+      transactions: [...nextTxs, ...s.transactions],
+    }))
+    void flushLocalVaultSnapshotToKv().catch(() => {})
+    return {
+      insertedCount: nextTxs.length,
+      insertedKeys: nextTxs.map((tx) => String(tx.sourceRef).replace(/^webhook:/, '')),
+      skippedDuplicateKeys,
     }
   },
 

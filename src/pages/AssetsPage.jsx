@@ -7,6 +7,7 @@ import {
   ASSET_CATEGORIES,
   ASSET_CATEGORY_CHART_COLOR,
   LIQUIDITY_CHART_COLOR,
+  normalizeCategoryForType,
 } from '../lib/goldenAssetCategories'
 
 export default function AssetsPage() {
@@ -18,6 +19,16 @@ export default function AssetsPage() {
 
   const sumAssets = useMemo(() => assets.reduce((s, a) => s + a.amount, 0), [assets])
   const sumDebts = useMemo(() => debts.reduce((s, d) => s + d.amount, 0), [debts])
+  const { sumCardDebt, sumLoanDebt } = useMemo(() => {
+    let c = 0
+    let l = 0
+    for (const d of debts) {
+      const cat = normalizeCategoryForType('DEBT', d.category)
+      if (cat === '카드 대금') c += d.amount
+      else if (cat === '대출') l += d.amount
+    }
+    return { sumCardDebt: c, sumLoanDebt: l }
+  }, [debts])
 
   /** 총 평가금액 = (유동성 + 고정 자산) − 부채 */
   const totalNet = cumulativeBalance + sumAssets - sumDebts
@@ -201,6 +212,22 @@ export default function AssetsPage() {
               <li className="rounded-xl bg-[#121212] border border-rose-900/25 p-3">
                 등록 부채 합계: <span className="font-bold text-rose-300">−{formatKRW(sumDebts)}</span>
               </li>
+              {(sumCardDebt > 0 || sumLoanDebt > 0) && (
+                <li className="rounded-xl bg-[#121212] border border-rose-500/30 p-3 space-y-1.5">
+                  {sumCardDebt > 0 && (
+                    <p>
+                      <span className="text-rose-200/90 font-bold">🚨 갚아야 할 카드 빚(합계):</span>{' '}
+                      <span className="font-bold text-rose-200 tabular-nums">{formatKRW(sumCardDebt)}</span>
+                    </p>
+                  )}
+                  {sumLoanDebt > 0 && (
+                    <p>
+                      <span className="text-amber-100/90 font-bold">남은 대출금(합계):</span>{' '}
+                      <span className="font-bold text-amber-100/90 tabular-nums">{formatKRW(sumLoanDebt)}</span>
+                    </p>
+                  )}
+                </li>
+              )}
               <li className="rounded-xl bg-[#121212] border border-[#FFD700]/20 p-3">
                 부채 상환 후 순자산 지표는 상단 총 평가금액을 기준으로 삼습니다.
               </li>

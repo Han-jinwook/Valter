@@ -1,4 +1,11 @@
-const DEBT_CATEGORIES = new Set(['대출', '할부', '카드대금', '부채상환'])
+const DEBT_CATEGORIES = new Set([
+  '대출',
+  '할부',
+  '카드대금',
+  '부채상환',
+  '카드대금 결제',
+  '대출 상환',
+])
 const TRANSFER_CATEGORIES = new Set(['이체'])
 const SAVING_CATEGORIES = new Set(['저축', '투자'])
 
@@ -204,6 +211,7 @@ export function selectSankeyModel(transactions = [], options = {}) {
 
 import { useMemo } from 'react'
 import { useVaultStore } from '../stores/vaultStore'
+import { isConsumptiveLedgerExpense } from '../lib/ledgerCategoryPolicy'
 
 function parseTransactionDate(dateStr) {
   const m = String(dateStr || '').match(/(\d{4})[.\-\/](\d{2})[.\-\/](\d{2})/)
@@ -230,10 +238,11 @@ export function selectLedgerCumulativeBalance(transactions = []) {
 
 /**
  * 4개 재무 지표 집계 hook (AssetCard 전용)
- * - cumulativeBalance: 전체 수입 - 전체 지출 (누적 가용 자금)
- * - thisMonthFlow:     이번 달 수입 - 이번 달 지출
- * - thisMonthExpense:  이번 달 지출 총액
- * - expenseChangeRate: (이번 달 지출 - 지난달 지출) / 지난달 지출 * 100 (null = 지난달 없음)
+ * - cumulativeBalance: 전체 수입 - 전체 지출(상환·이자 등 모든 EXPENSE 포함) — 누적 가용
+ * - thisMonthFlow:     이번 달 수입 - 이번 달 총 출금(지출+상환)
+ * - thisMonthExpense:  이번 달 **소비성** 지출(카드대금·대출상환 제외) — 대시보드 '지출' 표기용
+ * - thisMonthOutflow:  이번 달 EXPENSE 총액(상환 포함)
+ * - expenseChangeRate: 소비성 지출 전월 대비
  * TRANSFER 타입은 모든 집계에서 제외.
  */
 export function useAssetStats() {
@@ -247,8 +256,9 @@ export function useAssetStats() {
     const lastMonth = thisMonth === 0 ? 11 : thisMonth - 1
 
     let thisMonthIncome = 0
-    let thisMonthExpense = 0
-    let lastMonthExpense = 0
+    let thisMonthOutflow = 0
+    let thisMonthConsumptive = 0
+    let lastMonthConsumptive = 0
 
     for (const tx of transactions) {
       if (tx.type === 'TRANSFER') continue
@@ -258,22 +268,29 @@ export function useAssetStats() {
 
       if (d.getFullYear() === thisYear && d.getMonth() === thisMonth) {
         if (tx.type === 'INCOME') thisMonthIncome += amt
-        else if (tx.type === 'EXPENSE') thisMonthExpense += Math.abs(amt)
+        else if (tx.type === 'EXPENSE') {
+          const abs = Math.abs(amt)
+          thisMonthOutflow += abs
+          if (isConsumptiveLedgerExpense(tx)) thisMonthConsumptive += abs
+        }
       }
       if (d.getFullYear() === lastMonthYear && d.getMonth() === lastMonth) {
-        if (tx.type === 'EXPENSE') lastMonthExpense += Math.abs(amt)
+        if (tx.type === 'EXPENSE' && isConsumptiveLedgerExpense(tx)) {
+          lastMonthConsumptive += Math.abs(amt)
+        }
       }
     }
 
     return {
       hasData: transactions.length > 0,
       cumulativeBalance: selectLedgerCumulativeBalance(transactions),
-      thisMonthFlow: thisMonthIncome - thisMonthExpense,
+      thisMonthFlow: thisMonthIncome - thisMonthOutflow,
       thisMonthIncome,
-      thisMonthExpense,
+      thisMonthExpense: thisMonthConsumptive,
+      thisMonthOutflow,
       expenseChangeRate:
-        lastMonthExpense > 0
-          ? ((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100
+        lastMonthConsumptive > 0
+          ? ((thisMonthConsumptive - lastMonthConsumptive) / lastMonthConsumptive) * 100
           : null,
     }
   }, [transactions])

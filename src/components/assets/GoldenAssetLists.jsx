@@ -6,6 +6,7 @@ import {
   ASSET_CATEGORIES,
   DEBT_CATEGORIES,
   groupLinesByCategoryOrdered,
+  normalizeCategoryForType,
 } from '../../lib/goldenAssetCategories'
 
 function amountTrendClass(isDebt, delta) {
@@ -243,6 +244,16 @@ export function DebtAccordionList() {
     () => groupLinesByCategoryOrdered(debts, 'DEBT', DEBT_CATEGORIES),
     [debts],
   )
+  const { cardDebtWon, loanDebtWon } = useMemo(() => {
+    let card = 0
+    let loan = 0
+    for (const d of debts) {
+      const c = normalizeCategoryForType('DEBT', d.category)
+      if (c === '카드 대금') card += d.amount
+      else if (c === '대출') loan += d.amount
+    }
+    return { cardDebtWon: card, loanDebtWon: loan }
+  }, [debts])
 
   if (groups.length === 0) {
     return (
@@ -262,6 +273,24 @@ export function DebtAccordionList() {
         <span className="material-symbols-outlined text-rose-300">credit_card</span>
         나의 부채
       </h2>
+      {(cardDebtWon > 0 || loanDebtWon > 0) && (
+        <div className="rounded-xl border border-rose-500/35 bg-rose-950/40 px-4 py-3 space-y-2">
+          {cardDebtWon > 0 && (
+            <p className="text-sm font-bold text-rose-100 flex flex-wrap items-baseline gap-2">
+              <span aria-hidden>🚨</span>
+              <span>이번에 갚아야 할 카드 빚(등록 합계)</span>
+              <span className="tabular-nums text-rose-200">{formatKRW(cardDebtWon)}</span>
+            </p>
+          )}
+          {loanDebtWon > 0 && (
+            <p className="text-sm font-bold text-[#f0c2a0] flex flex-wrap items-baseline gap-2">
+              <span className="material-symbols-outlined text-base text-amber-200/90">account_balance</span>
+              <span>남은 대출금(등록 합계)</span>
+              <span className="tabular-nums">{formatKRW(loanDebtWon)}</span>
+            </p>
+          )}
+        </div>
+      )}
       {groups.map(([category, rows]) => (
         <AccordionBlock key={category} title={category} icon="request_quote" defaultOpen={false}>
           <ul className="space-y-2">

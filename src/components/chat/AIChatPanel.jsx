@@ -3,6 +3,7 @@ import IsolatedChatComposer from './IsolatedChatComposer'
 import { MessageWithActionLinks } from './MessageWithActionLinks'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useUIStore } from '../../stores/uiStore'
+import { isConsumptiveLedgerExpense } from '../../lib/ledgerCategoryPolicy'
 import { CHAT_PANEL_ASIDE_LAYOUT } from './chatPanelAsideLayout'
 
 // 날짜 문자열 → YYYY-MM-DD 정규화 (다양한 포맷 대응)
@@ -251,7 +252,11 @@ export default function AIChatPanel() {
         if (endDate)   pool = pool.filter((t) => normalizeDate(t.date) <= endDate)
         // 분석은 기본적으로 지출(음수) 기준
         if (txType === 'income') pool = pool.filter((t) => t.amount > 0)
-        else pool = pool.filter((t) => t.amount < 0)
+        else {
+          pool = pool.filter((t) => t.amount < 0)
+          // 상환(카드대금·대출)은 "소비" 순위에서 제외 — 이자/금융수수료는 포함
+          pool = pool.filter((t) => isConsumptiveLedgerExpense(t))
+        }
 
         // 2) 제외 카테고리 필터
         if (excl.length > 0) {

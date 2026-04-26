@@ -20,6 +20,7 @@ import { resolveTransactionsForLoad } from './lib/ledgerBootstrap'
 import { useUIStore } from './stores/uiStore'
 import { useAssetStore } from './stores/assetStore'
 import { useVaultStore } from './stores/vaultStore'
+import { registerAndSyncWebhookInbox } from './lib/syncWebhookInbox'
 
 function toSnapshotKey(snapshot) {
   return JSON.stringify({ ...snapshot, exportedAt: '' })
@@ -66,7 +67,12 @@ function AppShell() {
     setDriveBackupState,
     setLastDriveBackupAt,
   } = useUIStore()
-  const { isDragging, setDragging, ingestBackgroundParsedEntries, syncPendingFromBackgroundQueue } = useVaultStore()
+  const {
+    isDragging,
+    setDragging,
+    ingestBackgroundParsedEntries,
+    syncPendingFromBackgroundQueue,
+  } = useVaultStore()
   const dragCounter = useRef(0)
   const gmailStatusTimerRef = useRef(null)
   const backupPersistTimerRef = useRef(null)
@@ -186,6 +192,15 @@ function AppShell() {
       }
 
       try {
+        const wh = await registerAndSyncWebhookInbox()
+        if (wh.ok && wh.pulled > 0) {
+          console.info('[WebhookInbox] merged', wh.pulled)
+        }
+      } catch (error) {
+        console.warn('[WebhookInbox] sync failed', error)
+      }
+
+      try {
         const status = await getDriveBackupStatus()
         if (!cancelled) {
           setDriveBackupState('idle', '', status.connected)
@@ -239,6 +254,19 @@ function AppShell() {
       }
     }
   }, [setDriveBackupState, setLastDriveBackupAt, syncPendingFromBackgroundQueue])
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      void registerAndSyncWebhookInbox().then((r) => {
+        if (r.ok && r.pulled > 0) {
+          console.info('[WebhookInbox] visibility merge', r.pulled)
+        }
+      })
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
 
   useEffect(() => {
     const derivePhaseFromStatus = (text) => {

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { interRoomSystemSuffix } from './interRoomSystemSuffix.js'
 
 const ASSET_CATEGORIES = ['투자 자산', '부동산/보증금', '보험/연금', '기타 자산']
-const DEBT_CATEGORIES = ['대출', '개인 간 채무', '기타 부채']
+const DEBT_CATEGORIES = ['카드 대금', '대출']
 const ALL_GOLDEN_CATEGORIES = [...ASSET_CATEGORIES, ...DEBT_CATEGORIES]
 
 const CORS_HEADERS = {
@@ -83,8 +83,12 @@ function buildAssetSystemPrompt() {
 【category (고정 enum만 사용)】
 - 자산/부채 항목의 **category** 는 **아래 명칭 중 하나만** 쓴다(오탈자·띄어쓰기·축약·동의어·새 이름 금지).
 - type=**ASSET** 일 때: "투자 자산" | "부동산/보증금" | "보험/연금" | "기타 자산"
-- type=**DEBT** 일 때: "대출" | "개인 간 채무" | "기타 부채"
-- 애매하면 **반드시** "기타 자산" 또는 "기타 부채"에 넣는다. **임의로 새 카테고리를 만들지 마라.**
+- type=**DEBT** 일 때: **"카드 대금"** (신용·체크·생활 밀착 **단기 빚**·명세 **잔액** 전부) | **"대출"** (주담대·신용대출·개인간 장기채무 등)
+- 애매하면 **"대출"** (부채) 또는 "기타 자산"(자산)에 넣는다. **임의로 새 부채 분류를 만들지 마라.**
+
+【빚 청산·상환 — 브리핑(팩트 폭격)】
+- "카드값 냄/이체/출금"·"자동이체로 카드대금" "대출 갚음/원리금" 등은 **지기 일상 ‘지출(식비 등)’이 아님** — **update_asset_item** 으로 해당 **DEBT** 항목의 **amount(잔액)를 줄이거나** 날짜·메모를 갱신한다. (금액=남은 빚, 양수)
+- **반드시** 1~2문장 **브리핑**을 섞는다. 예시 뉘앙스(복붙 X): 통장에서 ₩O가 나가 **카드(또는 대출) 잔액**이 줄었다 · **이번에 남은 카드/대출 빚**은 (가능하면 목록/숫자 기반으로) **₩N** (자산 흐른 척·회계 쇼 X, **팩트**)
 
 【자산 도구 사용 규칙】
 - id가 필요하면 assetContext에 나온 목록의 id를 그대로 사용한다.
@@ -121,7 +125,7 @@ const TOOLS = [
           category: {
             type: 'string',
             enum: ALL_GOLDEN_CATEGORIES,
-            description: 'type=ASSET: 앞 4개만. type=DEBT: 뒤 3개만(정확한 명칭).',
+            description: 'type=ASSET: 앞 4개만. type=DEBT: "카드 대금" | "대출" 만(정확한 명칭).',
           },
           name: { type: 'string', description: '항목 이름' },
           amount: { type: 'number', description: '금액(원, 양수)' },
@@ -148,7 +152,7 @@ const TOOLS = [
           category: {
             type: 'string',
             enum: ALL_GOLDEN_CATEGORIES,
-            description: '변경 시에도 위 enum만. type과 일치하는 쪽(자산 4/부채 3)을 고른다.',
+            description: '변경 시에도 위 enum만. type과 일치하는 쪽(자산 4/부채 2)을 고른다.',
           },
           name: { type: 'string' },
           amount: { type: 'number' },

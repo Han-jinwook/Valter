@@ -47,3 +47,18 @@
   to = "/.netlify/functions/vault-verify-pin"
   status = 200
 
+[[redirects]]
+  from = "/api/webhook-receipt"
+  to = "/.netlify/functions/webhook-receipt"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhook-ledger-pull"
+  to = "/.netlify/functions/webhook-ledger-pull"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhook-auth-register"
+  to = "/.netlify/functions/webhook-auth-register"
+  status = 200
+

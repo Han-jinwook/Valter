@@ -1,0 +1,128 @@
+import crypto from 'node:crypto'
+import {
+  CORS,
+  addLedgerCategoryEnumBlock,
+  initBlobsContext,
+  getBlobStore,
+  json,
+  loadOpenAiKey,
+  safeParseJSON,
+  parseUserIdToken,
+  assertAuthPair,
+} from './webhookCommon.js'
+
+function todayIsoDate() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function buildWebhookParsePrompt() {
+  const d = todayIsoDate()
+  return `너는 가계부 영수증 한 줄을 구조화하는 변환기다. 입력은 결제/입금에 대한 임의의 한국어·숫자 텍스트다.
+${addLedgerCategoryEnumBlock()}
+
+규칙:
+- **출력은 JSON 오브젝트 하나뿐** (설명·Markdown·코드펜스 금지)
+- **필드:** type(문자열 "EXPENSE" 또는 "INCOME"), category(위 Enum), amount(양의 숫자, KRW), date(YYYY-MM-DD), title(짧은 한글 메모, 가맹점·용도)
+- "오늘"이면 date="${d}" 로 두어라. 날짜를 도저히 알 수 없을 때만 "${d}".
+- 금액이 여러 개면 **가장 합리적인 총액(결제·출금) 1개**를 택해라.
+- 수입(급여·환급·이자·입금)이면 type=INCOME, 지출이면 type=EXPENSE.`
+}
+
+function safeParseRequestBody(event) {
+  if (!event?.body) return { text: '' }
+  const raw = event.isBase64Encoded
+    ? Buffer.from(event.body, 'base64').toString('utf8')
+    : String(event.body)
+  const o = safeParseJSON(raw)
+  if (o && typeof o === 'object' && typeof o.text === 'string') {
+    return { text: o.text }
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    return { text: raw.trim() }
+  }
+  return { text: '' }
+}
+
+export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS, body: '' }
+  }
+  if (event.httpMethod !== 'POST') {
+    return json(405, { ok: false, error: 'METHOD_NOT_ALLOWED' })
+  }
+  if (!initBlobsContext(event)) {
+    return json(503, { ok: false, error: 'BLOBS_CONTEXT_UNAVAILABLE' })
+  }
+  const parsedQs = parseUserIdToken(event)
+  if (!parsedQs.ok) {
+    return json(400, { ok: false, error: parsedQs.error })
+  }
+  const { userId, token } = parsedQs
+  const store = getBlobStore()
+  const auth = await assertAuthPair(store, userId, token)
+  if (!auth.ok) {
+    return json(auth.status, { ok: false, error: auth.error })
+  }
+  const { text } = safeParseRequestBody(event)
+  if (!String(text).trim()) {
+    return json(400, { ok: false, error: 'EMPTY_TEXT' })
+  }
+  const apiKey = loadOpenAiKey()
+  if (!apiKey) {
+    return json(500, { ok: false, error: 'OPENAI_NOT_CONFIGURED' })
+  }
+  const body = {
+    model: 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: buildWebhookParsePrompt() },
+      { role: 'user', content: String(text).slice(0, 8000) },
+    ],
+  }
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const t = await res.text()
+    return json(502, { ok: false, error: 'OPENAI_ERROR', detail: t.slice(0, 200) })
+  }
+  const data = await res.json()
+  const content = data?.choices?.[0]?.message?.content
+  const parsed = safeParseJSON(String(content || ''))
+  if (!parsed || typeof parsed !== 'object') {
+    return json(422, { ok: false, error: 'PARSE_FAILED' })
+  }
+  const type = String(parsed.type || '').toUpperCase() === 'INCOME' ? 'INCOME' : 'EXPENSE'
+  const amount = Math.abs(Number(parsed.amount))
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return json(422, { ok: false, error: 'INVALID_AMOUNT' })
+  }
+  const title = String(parsed.title || '웹훅 영수증').trim() || '웹훅 영수증'
+  const idPart = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`
+  const key = `q/${userId}/${idPart}.json`
+  const record = {
+    v: 1,
+    createdAt: new Date().toISOString(),
+    key,
+    parsed: {
+      type,
+      category: String(parsed.category || '').trim(),
+      amount,
+      date: String(parsed.date || todayIsoDate()).trim(),
+      title: title.length > 200 ? title.slice(0, 200) : title,
+    },
+    rawText: String(text).slice(0, 12000),
+  }
+  await store.set(key, JSON.stringify(record), { metadata: { userId, kind: 'receipt' } })
+  return json(200, { ok: true, id: idPart, key })
+}

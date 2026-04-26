@@ -14,6 +14,7 @@ import { buildFullBackupSnapshot, buildLocalKvSnapshot } from '../../lib/backupS
 import { writeLocalVaultSnapshot } from '../../lib/localVaultPersistence'
 import { useAssetStore } from '../../stores/assetStore'
 import { isVaultPinConfigured, setVaultPin, clearVaultPin } from '../../lib/vaultPinClient'
+import WebhookSettings from './WebhookSettings'
 
 function formatDateTime(timestamp) {
   if (!timestamp) return '아직 백업 기록 없음'
@@ -243,6 +244,10 @@ export default function SettingsModal() {
             )}
           </div>
           {vaultPinMsg && <p className="text-xs text-on-surface-variant">{vaultPinMsg}</p>}
+        </div>
+
+        <div className="mb-4">
+          <WebhookSettings />
         </div>
 
         <div className="rounded-2xl bg-surface-container-low p-5 space-y-4">

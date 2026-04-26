@@ -11,6 +11,7 @@
     "postinstall": "node scripts/fix-netlify-wait-port.mjs"
   },
   "dependencies": {
+    "@netlify/blobs": "^10.7.4",
     "@supabase/supabase-js": "^2.102.1",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",

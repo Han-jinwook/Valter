@@ -8,8 +8,8 @@ export const ASSET_CATEGORIES = [
   '기타 자산',
 ] as const
 
-/** type=DEBT — 고정 3 */
-export const DEBT_CATEGORIES = ['대출', '개인 간 채무', '기타 부채'] as const
+/** type=DEBT — 고정 2 (단순화: 생활 밀착형 단기 = 카드, 장기 = 대출) */
+export const DEBT_CATEGORIES = ['카드 대금', '대출'] as const
 
 const ASSET_SET = new Set<string>(ASSET_CATEGORIES)
 const DEBT_SET = new Set<string>(DEBT_CATEGORIES)
@@ -35,9 +35,9 @@ const LEGACY_ASSET_MAP: [RegExp, (typeof ASSET_CATEGORIES)[number]][] = [
 ]
 
 const LEGACY_DEBT_MAP: [RegExp, (typeof DEBT_CATEGORIES)[number]][] = [
-  [/^대출$|전세?대출|주담대|신용대출|카드론|담보|모기지|마이너스|주택담보|학자금대출/i, '대출'],
-  [/개인(\s*간)?\s*채무?|빌린|차용|가족|지인|친구|동료/i, '개인 간 채무'],
-  [/기타(\s*부채)?$|^기타$/i, '기타 부채'],
+  [/^대출$|전세?대출|주담대|신용대출|담보|모기지|마이너스|주택담보|학자금대출|카드론(?!.*카드\s*빚)/i, '대출'],
+  [/^기타(\s*부채)?$|개인(\s*간)?\s*채무?|빌린|차용|가족|지인|친구|동료/i, '대출'],
+  [/^카드|신용|체크|리볼|명세|연체(?!\s*이자)/i, '카드 대금'],
 ]
 
 /**
@@ -63,8 +63,8 @@ export function normalizeCategoryForType(type: AssetLineType, raw: string | unde
   for (const [re, to] of LEGACY_DEBT_MAP) {
     if (re.test(s0)) return to
   }
-  if (!s0) return '기타 부채'
-  return '기타 부채'
+  if (!s0) return '대출'
+  return '대출'
 }
 
 /** UI 아코디언: 고정 순, 데이터 있는 카테고리만 */
