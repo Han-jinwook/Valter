@@ -170,10 +170,24 @@ type VaultState = {
     category: string
     amount: number
     date: string
-    memo: string
+    /** 적요(짧은 키워드) */
+    summary: string
+    /** 추가 메모(없으면 생략) */
+    detail_memo?: string
     account?: string
   }) => Promise<
-    | { success: true; txId: string; summary: { date: string; amount: number; category: string; memo: string; type: 'EXPENSE' | 'INCOME' } }
+    | {
+        success: true
+        txId: string
+        summary: {
+          date: string
+          amount: number
+          category: string
+          memo: string
+          detail_memo: string
+          type: 'EXPENSE' | 'INCOME'
+        }
+      }
     | { success: false; error: string }
   >
   ingestBackgroundParsedEntries: (items: BackgroundParsedItem[]) => Promise<IngestBackgroundResult>
@@ -373,7 +387,8 @@ function buildVaultTxFromAiLedgerEntry(input: {
   category: string
   amount: number
   date: string
-  memo: string
+  summary: string
+  detail_memo?: string
   account?: string
 }): VaultTransaction {
   const amountAbs = Math.abs(Number(input.amount))
@@ -382,15 +397,15 @@ function buildVaultTxFromAiLedgerEntry(input: {
   }
   const txType: Transaction['type'] = input.type === 'INCOME' ? 'INCOME' : 'EXPENSE'
   const signed = txType === 'INCOME' ? amountAbs : -amountAbs
-  const memo = String(input.memo || '').trim() || '메모 없음'
+  const summ = String(input.summary || '').trim() || '내용'
+  const extra = String(input.detail_memo || '').trim()
   const categoryNorm = normalizeKeeperAddLedgerCategory(
     input.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
     String(input.category || '').trim(),
   )
-  const isTax = /세금|국세청|공과금/.test(`${categoryNorm} ${memo}`)
+  const isTax = /세금|국세청|공과금/.test(`${categoryNorm} ${summ} ${extra}`)
   const acct = String(input.account || '').trim()
-  const title = memo.length > 120 ? `${memo.slice(0, 117)}…` : memo
-  // userMemo(메모 열) = 메모·맥락만(제목/적요). "지기 AI"·카테고리 꾸밈 문구는 넣지 않음(카테고리는 열).
+  const title = summ.length > 120 ? `${summ.slice(0, 117)}…` : summ
 
   return {
     id: String(++_id),
@@ -400,7 +415,7 @@ function buildVaultTxFromAiLedgerEntry(input: {
     merchant: title,
     name: title,
     location: '',
-    userMemo: title,
+    userMemo: extra,
     category: categoryNorm,
     type: txType,
     aiConfidence: 1,
@@ -423,18 +438,19 @@ function buildVaultTxFromWebhookInbox(input: {
   date: string
   title: string
 }): VaultTransaction {
-  const base = buildVaultTxFromAiLedgerEntry({
-    type: input.type,
-    category: input.category,
-    amount: input.amount,
-    date: input.date,
-    memo: input.title,
-  })
   return {
-    ...base,
+    ...buildVaultTxFromAiLedgerEntry({
+      type: input.type,
+      category: input.category,
+      amount: input.amount,
+      date: input.date,
+      summary: String(input.title || '내용')
+        .trim()
+        .slice(0, 120),
+      detail_memo: undefined,
+    }),
     source: 'webhook',
     sourceRef: `webhook:${input.queueKey}`,
-    userMemo: String(input.title || '').trim() || base.userMemo,
   }
 }
 
@@ -847,6 +863,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           amount: newTx.amount,
           category: newTx.category,
           memo: newTx.merchant,
+          detail_memo: newTx.userMemo || '',
           type: newTx.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
         },
       }

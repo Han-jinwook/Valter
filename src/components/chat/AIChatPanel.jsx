@@ -328,7 +328,14 @@ export default function AIChatPanel() {
           category: String(args.category ?? '').trim() || '기타',
           amount: Number(args.amount),
           date: String(args.date ?? '').trim(),
-          memo: String(args.memo ?? '').trim(),
+          summary: String(
+            args.summary != null && String(args.summary).trim()
+              ? args.summary
+              : args.memo != null
+                ? args.memo
+                : '',
+          ).trim() || '내용',
+          detail_memo: String(args.detail_memo ?? '').trim() || undefined,
           account: String(args.account ?? '').trim() || undefined,
         })
         if (!out.success) return out

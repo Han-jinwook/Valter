@@ -236,7 +236,7 @@ export default function TransactionTable() {
                             onDoubleClick={() => beginEdit(tx.id, 'userMemo', tx.userMemo || '')}
                             className="text-[11px] text-gray-700 cursor-text truncate"
                           >
-                            {tx.userMemo || '메모를 더블클릭해 입력'}
+                            {tx.userMemo?.trim() ? tx.userMemo : '(메모 없음)'}
                           </p>
                         )}
                       </div>
