@@ -383,7 +383,9 @@ function buildPendingTxFromParsed(input: {
   date?: string | null
   amount?: number
   category?: string
+  /** AI·문서 설명(스프레드시트 메모는 `memo`) */
   reasoning?: string
+  memo?: string
   confidence?: number
   linkedDocumentId?: string | null
   source?: VaultTransaction['source']
@@ -409,7 +411,10 @@ function buildPendingTxFromParsed(input: {
     account: String(input.account || '').trim(),
     name: merchant,
     location: input.location || '',
-    userMemo: String(input.reasoning || '').trim() || `${normalizedCategory} 자동 분류`,
+    userMemo:
+      String(input.memo || '').trim() ||
+      String(input.reasoning || '').trim() ||
+      '',
     category: normalizedCategory,
     type,
     aiConfidence: Math.max(0, Math.min(1, Number(input.confidence || 0.9))),
@@ -1056,6 +1061,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         amount: item.amount,
         category: item.category,
         reasoning: item.reasoning,
+        memo: item.memo,
         confidence: item.confidence,
         account: item.account,
         linkedDocumentId: documentId,

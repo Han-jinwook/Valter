@@ -264,6 +264,8 @@ export async function parseGoogleSpreadsheetCsvForImport(
 }
 
 // --- 구조화 가계부 (날짜·금액·적요 열 스코어) ---
+// 대원칙(원장 5필드): 분류(카테고리) · 적요(가맹점명) · 계정(결제수단) · 금액 · 메모(비고, 선택)
+// 4필드(분류·적요·계정·금액)는 반드시 채우고, 메모는 있으면 기록(없으면 빈칸, 불필요한 질문 없음)
 
 const PAD = (n: string) => String(Number(n)).padStart(2, '0')
 
@@ -320,12 +322,32 @@ function parseSignedAmountFromCell(v: unknown): number | null {
   return n
 }
 
-type ColumnScores = { date: number; amount: number; out: number; inc: number; desc: number; cat: number; type: number }
+type ColumnScores = {
+  date: number
+  amount: number
+  out: number
+  inc: number
+  desc: number
+  cat: number
+  type: number
+  account: number
+  memo: number
+}
 
 function scoreHeaderCellForLedger(cell: string): ColumnScores {
   const c0 = String(cell).replace(/\s+/g, ' ').trim().toLowerCase()
   const c = c0.normalize('NFKC')
-  const s: ColumnScores = { date: 0, amount: 0, out: 0, inc: 0, desc: 0, cat: 0, type: 0 }
+  const s: ColumnScores = {
+    date: 0,
+    amount: 0,
+    out: 0,
+    inc: 0,
+    desc: 0,
+    cat: 0,
+    type: 0,
+    account: 0,
+    memo: 0,
+  }
   if (!c) return s
   if (/(잔액|잔고|balance)/.test(c) && !/금액|합계|거래|적요|내용/.test(c)) {
     s.amount -= 3
@@ -336,10 +358,23 @@ function scoreHeaderCellForLedger(cell: string): ColumnScores {
   if ((c.includes('금액') || c.includes('합계') || c === 'amount' || c === '₩' || c === '￦') && !/잔/.test(c)) {
     s.amount += 2
   }
-  if (/(적요|내용|가맹점|상세|사용처|거래명|description|summary|note|노트)/.test(c)) s.desc += 3
+  if (/(적요|내용|가맹점|상세|사용처|거래명|description|summary)/.test(c) && !/메모|비고|remarks?/.test(c)) {
+    s.desc += 3
+  }
   if (c.includes('분류') || c.includes('카테고리') || c.includes('category') || c === '항목' || c === 'type') s.cat += 2
   if (/(구분|유형|이체|transaction|거래구분|수지)/.test(c) || (c.length < 14 && c === 'type')) s.type += 2
-  if (c === '메모' || c === '비고') s.desc += 1
+  if (c === '메모' || c === '비고' || c === 'memo' || c === 'note' || c === 'remarks' || /^비고\(.+\)$/.test(c) || /^메모\(.+\)$/.test(c)) {
+    s.memo += 4
+  } else if ((c.startsWith('메모') || c.startsWith('비고')) && c.length < 24) {
+    s.memo += 2
+  }
+  if (/(결제수단|결제방법|지불수단|이체수단|지불|payment|pay\s*method|payment\s*method)/.test(c) && c.length < 36) {
+    s.account += 4
+  } else if (c === '계정' || c === 'account') {
+    s.account += 3
+  } else if (/(카드|현금|통장|체크|승인)/.test(c) && !/(과목|코드|분류|금액|잔)/.test(c) && c.length < 20) {
+    s.account += 1
+  }
   return s
 }
 
@@ -351,6 +386,8 @@ type ColMap = {
   desc: number
   cat: number
   type: number
+  account: number
+  memo: number
   totalScore: number
 }
 
@@ -376,16 +413,22 @@ function pickColumnIndices(headerCells: string[]): ColMap | null {
   const date = take('date')
   const out = take('out')
   const inc = take('inc')
-  let amount = take('amount')
   const type = take('type')
   const desc = take('desc')
   const cat = take('cat')
+  const account = take('account')
+  const memo = take('memo')
+  let amount = take('amount')
   if (date < 0) return null
   if (out < 0 && inc < 0 && amount < 0) {
     let bestA = -1
     let bestN = 0.5
+    const reserved = new Set(
+      [date, out, inc, type, desc, cat, account, memo].filter((i) => i >= 0),
+    )
     for (let j = 0; j < scores.length; j += 1) {
-      if (j === date || j === desc || j === cat) continue
+      if (reserved.has(j)) continue
+      if (scores[j].memo >= 2 || scores[j].account >= 2) continue
       if (scores[j].amount + scores[j].out * 0.5 + scores[j].inc * 0.5 > bestN) {
         bestN = scores[j].amount + scores[j].out * 0.5 + scores[j].inc * 0.5
         bestA = j
@@ -393,11 +436,12 @@ function pickColumnIndices(headerCells: string[]): ColMap | null {
     }
     if (bestA < 0) {
       for (let j = 0; j < headerCells.length; j += 1) {
-        if (j === date || j === desc || j === cat) continue
+        if (reserved.has(j)) continue
         const h = String(headerCells[j] || '')
           .toLowerCase()
-        if (/(잔액|잔고|번호|no)/.test(h)) continue
+        if (/(잔액|잔고|^no\.?$|^[#＃])/.test(h)) continue
         if (scoreHeaderCellForLedger(h).date > 0) continue
+        if (scoreHeaderCellForLedger(h).memo >= 2 || scoreHeaderCellForLedger(h).account >= 2) continue
         bestA = j
         break
       }
@@ -417,6 +461,8 @@ function pickColumnIndices(headerCells: string[]): ColMap | null {
   if (desc >= 0) total += 1
   if (cat >= 0) total += 1
   if (type >= 0) total += 0.5
+  if (account >= 0) total += 0.3
+  if (memo >= 0) total += 0.3
   if (total < 4) return null
   return {
     date,
@@ -426,6 +472,8 @@ function pickColumnIndices(headerCells: string[]): ColMap | null {
     desc,
     cat,
     type,
+    account,
+    memo,
     totalScore: total,
   }
 }
@@ -496,7 +544,7 @@ function tryStructuredLedgerFromRowsImpl(
       amountAbs = Math.abs(sn)
       const typeCell = col.type >= 0 ? String(row[col.type] || '').trim() : ''
       if (typeCell) {
-        if (/(지출|출금|debit|expense|체크|이체\\s*출금)/i.test(typeCell) && !/(수입|입금|환급|급여|이자)/.test(typeCell)) {
+        if (/(지출|출금|debit|expense|이체\s*출금)/i.test(typeCell) && !/(수입|입금|환급|급여|이자)/.test(typeCell)) {
           isIncome = false
         } else if (isIncomeTypeCell(typeCell)) {
           isIncome = true
@@ -512,7 +560,7 @@ function tryStructuredLedgerFromRowsImpl(
           .map((x) => String(x || '').trim())
           .filter(Boolean)
           .join(' ')
-        isIncome = /(환급|부수입|급여|이자|캐시백|보너스|배당|용돈|이체\\s*입금|캐시|환불|적립|수입|입금|이체\\s*수입|용돈)/.test(
+        isIncome = /(환급|부수입|급여|이자|캐시백|보너스|배당|용돈|이체\s*입금|캐시|환불|적립|수입|입금|이체\s*수입|용돈)/.test(
           catH,
         ) && !/(쇼핑|식비|교통|마트|편|카페|구독|결제|의료|주유|생활|의류|뷰티|숙박)/.test(catH)
       }
@@ -526,6 +574,8 @@ function tryStructuredLedgerFromRowsImpl(
       ''
     const rawCat = col.cat >= 0 ? String(row[col.cat] || '').trim() : ''
     const merchant = descText || rawCat || `${label} 항목`
+    const accountStr = col.account >= 0 ? String(row[col.account] ?? '').trim() : ''
+    const memoStr = col.memo >= 0 ? String(row[col.memo] ?? '').trim() : ''
 
     let category = '기타'
     if (isIncome) {
@@ -537,14 +587,14 @@ function tryStructuredLedgerFromRowsImpl(
       category = rawCat || '기타 지출'
     }
 
-    const reasoning = `스프레드시트 열 기준: ${isIncome ? '수입' : '지출'} (자동) · ${String(dStr).trim()}`
-
     results.push({
       merchant,
       date: ymd,
       amount: amountAbs,
       category,
-      reasoning: reasoning.slice(0, 200),
+      account: accountStr,
+      memo: memoStr,
+      reasoning: '',
       confidence: 0.9,
       sourceRef: `${label}:row${ri + 1}`,
     })

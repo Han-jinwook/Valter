@@ -5,7 +5,21 @@
 
 > **문서 지위:** 기획·코드 변경 시 **이 문서(§0~4)를 1차 기준**으로 삼는다.  
 > **과거 기획(긴본):** `docs/plan-archive.md` (2026-04-15 캡처)  
-> **합의 반영:** 2026-04-21 (재미니) · 2026-04-22 (스프린트/아카이브) · 2026-04-26 (CFO `budgetContext`/착시 타파 연동) · 2026-04-28 (지기: `fact_line`/상대일·끼니 `detail_memo`) · **코드 대조:** 아래 [구현 대조](#구현-대조-코드-베이스-스냅샷)
+> **합의 반영:** 2026-04-21 (재미니) · 2026-04-22 (스프린트/아카이브) · 2026-04-26 (CFO `budgetContext`/착시 타파 연동) · **2026-04-27** (지기·원장 **5필드 대원칙** + 구글 시트 **구조화 가져오기** 결제수단·메모 열 매핑) · 2026-04-28 (지기: `fact_line`/상대일·끼니 `detail_memo`) · **코드 대조:** 아래 [구현 대조](#구현-대조-코드-베이스-스냅샷)
+
+---
+
+## 현재 시점 토탈 스냅샷 (2026-04-27)
+
+| 방 | 상태 | 한 줄 |
+|----|------|--------|
+| **§0** 코어 | ✅ | PWA, IDB+Zustand, 웹훅→Blobs→클라 Pull |
+| **§1 지기** | ✅+진행 | 원장·채팅·웹훅·Gmail·**구조화 시트 가져오기**; **5필드 대원칙**·계정/메모 매핑 반영 |
+| **§2 황금자산** | ✅ | 자산/부채·청산 AI (`chat-assistant-assets`) |
+| **§3 예산·CFO** | ✅+진행 | `BudgetPage`·`isConsumptive`·CFO `budgetContext`·착시 타파; 카테고리별 한도·목표 DB는 ▢ |
+| **§4 금고** | 부분 | Gmail·비전·CSV/XLSX·**Drive 스프레드시트** 경로; E2E·프롬프트 전면 정렬은 점검 |
+
+**지기(원장) 쪽 최근 기술 반영:** `parseGoogleSpreadsheetCsvForImport` — 날짜·금액·적요 등 열 **스코어 매칭**으로 `DocumentParseResult` 직접 생성, 실패 시에만 AI 청크 분석. **결제수단**→`account`, **메모**→`memo`(`userMemo`), `reasoning`에 디버그 문구를 넣지 않음. 클라: `documentParsers.ts` · `SheetPickerModal.jsx` · `buildPendingTxFromParsed`(`memo` 우선).
 
 ---
 
@@ -24,10 +38,27 @@
 
 **역할:** 일상 거래(수입/지출)를 **1차** 수집·분류·기록.
 
+### 원장 필드 **대원칙** (지기방 공통)
+
+표·영수증·채팅·웹훅 등 **모든 경로**에서 동일한 기준을 목표로 둔다 (구현·프롬프트는 점진 정렬).
+
+| 구분 | 필드 | 설명 |
+|------|------|------|
+| **필수 4** | **분류(카테고리)** | 식비·쇼핑·주거/통신 등 |
+| | **적요** | 가맹점·거래 한 줄 설명(표시명·merchant) |
+| | **계정(결제수단)** | 현금/카드/특정 통장·카드명 — *신용이면 §1 AI 규칙(팩트)과 연동* |
+| | **금액** | 수입(+) / 지출(−) 일관 |
+| **선택 1** | **메모(비고)** | 있으면 **최대한 기록**; **없어도 됨** — “메모 있어요?” 류 **불필요 질문은 하지 않음** |
+| **원칙** | 누락·애매 | **4가지**는 소스(메모/서류/영수증)에서 **우선 찾고**, 애매하면 **질문**해 채움. 메모만 비어 있으면 **그대로** 둬도 됨. |
+
+- **스프레드시트 가져오기:** 열 이름으로 **분류 / 적요 / 결제수단(계정) / 금액 / 메모** 를 매핑(구조화 파싱). 메모·계정이 비어 있으면 **원장 `PENDING` + 계정 확인 UI** 흐름(기존) 유지.
+- **AI/비전/채팅:** `DocumentParseResult`는 `memo`와 `reasoning`(설명)을 구분; `userMemo` = **memo 우선** (시트·DB 설계와 일치).
+
 **기능**
 
 - **자연어/텍스트 파싱:** 채팅·SMS 류를 AI가 분석해 **표준 필드**(date, title, amount, category, type)로 **원장(ledger_lines)**에 반영.
 - **웹훅 자동화:** iOS 단축어/안드 **POST** → 큐(Blobs) 적재 → **앱 진입·visibility** 시 **Pull**·머지.
+- **구글 시트(첫 시트):** Drive CSV → **구조화 파싱** 우선, 실패 시 AI 문서 분석 폴백.
 
 **AI 규칙**
 
@@ -86,21 +117,22 @@
 | 구역 | 명세 핵심 | 구현 | 비고 |
 |------|-----------|------|------|
 | **§0** | IDB+Zustand, 웹훅 2단 | ✅ `vaultStore`, Netlify `webhook-*`, `registerAndSyncWebhookInbox` | 로컬 순수 Vite는 Blobs 503 — `netlify dev`/배포에서 전체 동작 |
-| **§1** | 파싱, 웹훅, 팩트·수수료 | ✅ `chat-assistant.js`, `webhook-receipt`, 프롬프트, Enum(이자/상환) | `ledger_lines` + `ingestWebhookInboxItems` · **§1 지기 채팅 · 원장 팔로우업** 참고(모델 `gpt-4o-mini`, `fact_line` 등) |
+| **§1** | 파싱, 웹훅, 팩트·수수료 | ✅ `chat-assistant.js`, `webhook-receipt`, 프롬프트, Enum(이자/상환) | `ledger_lines` + `ingestWebhookInboxItems` · **5필드 대원칙** `documentParsers` / `buildPendingTxFromParsed(memo)` · **§1 지기 채팅 · 원장 팔로우업** (모델 `gpt-4o-mini`, `fact_line` 등) |
 | **§2** | 부채 2종, UI, 청산 AI | ✅ `goldenAssetCategories`, `chat-assistant-assets.js`, `AssetsPage` | 구 라벨은 `normalize` |
 | **§3** | 실시간 예산·`isConsumptive` | **진행** | ✅ `BudgetPage`: `useAssetStats` 소비+`useThisMonthConsumptiveByCategory`+`budgetSettings(월한도, localStorage)` / 초과 시 경고. ▢ 카테고리별 **한도**·목표 DB는 다음 |
 | **§3** | CFO AI [착시 타파] + 실시간 `budgetContext` | **✅** | `netlify/functions/chat-assistant-budget.js`(스냅샷·착시·폴백) · `src/lib/budgetContextForApi.ts` · `src/components/chat/BudgetChatPanel.jsx`(요청마다 payload) · `selectThisMonthConsumptiveExpenseTotal` |
-| **§4** | Gmail·벌크·비전 | **부분** | 코드 경로 있음, E2E는 별도 점검 |
+| **§4** | Gmail·벌크·비전 | **부분** | Gmail·이미지·업로드 경로. **GSheet:** `parseGoogleSpreadsheetCsvForImport` + `ingestDocumentAnalysisBatch` (계정·메모 열) |
 
 ---
 
 ## §1 지기 채팅 · 원장 팔로우업
 
-(상단 **합의 반영** 2026-04-28 전후, 코드·프롬프트에 반영된 §1 보완)
+(상단 **합의 반영** 2026-04-27~28 전후, 코드·프롬프트에 반영된 §1 보완 · **5필드 대원칙**은 §1 본문 표 참고)
 
 - **모델:** 지기(금고) 채팅 `/.netlify/functions/chat-assistant` — **`gpt-4o-mini`** (OpenAI Chat Completions).
 - **계정 미지정:** `add_ledger_entry` 후 `need_account_clarify` — 클라 `AIChatPanel`이 **`fact_line`**(YYYY-MM-DD, 적요, 메모, ₩, 카테고리)을 내려주고, 답은 **팩트 한 줄 → 결제(현금/카드) 질문** 위주(수치 없는 추상 "확인" 멘트 금지).
 - **날짜:** "삼일 전"·"N일 전" 등 **상대·구어**는 **요청 기준 "오늘"**에서 YYYY-MM-DD로 **직접 환산** — 같은 뜻으로 **캘린더를 다시 묻지 않음**.
+- **4필수·메모(§1 대원칙 표):** **분류·적요·계정·금액** 은 `need_account_clarify`·툴·프롬프트로 끝까지 맞출 것(점진). **메모**는 없음이어도 질문으로 번거롭게 하지 않음.
 - **메모 `detail_memo`:** "점심으로/저녁에" 등은 **끼니(식사 맥락)** — 예: **`보리밥, 점심`**, **`돼지갈비, 저녁`** (쉼표). 캘린더 말(오늘/어제)은 메모에 넣지 않음(날짜 열과 중복).
 
 ---

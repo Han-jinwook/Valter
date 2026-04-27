@@ -22,6 +22,8 @@ export type DocumentAnalysisChunk = {
 
 export type DocumentParseResult = VisionParseResult & {
   account?: string
+  /** 시트·문서의 사용자 메모(비고). `reasoning`(AI 설명)과 구분 */
+  memo?: string
   sourceRef?: string
 }
 
@@ -68,6 +70,7 @@ function normalizeDocumentItem(data: any, chunk: DocumentAnalysisChunk, index: n
     amount: normalizeAmount(data?.amount),
     category: String(data?.category || '기타').trim() || '기타',
     account: String(data?.account || '').trim(),
+    memo: String(data?.memo || '').trim(),
     reasoning: String(data?.reasoning || '').trim(),
     confidence: Number(data?.confidence || 0.75),
     sourceRef: `${chunk.sourceName}:${chunk.chunkIndex}:${chunk.itemStart + index}`,
