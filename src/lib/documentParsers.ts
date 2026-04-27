@@ -1,3 +1,5 @@
+import type { DocumentParseResult } from './visionAIEngine'
+
 export type UploadFileKind = 'image' | 'csv' | 'xlsx' | 'pdf' | 'unsupported'
 
 export type LocalDocumentExtraction = {
@@ -205,6 +207,15 @@ export async function extractLocalDocument(file: File): Promise<LocalDocumentExt
   throw new Error('지원되지 않는 문서 형식입니다.')
 }
 
+function buildExtractionFromCsvRows(rows: string[][], sourceName: string): LocalDocumentExtraction {
+  const table = rowsToTextBlocks(rows)
+  return {
+    documentType: 'csv',
+    sourceName: String(sourceName || '스프레드시트').trim() || '스프레드시트',
+    ...table,
+  }
+}
+
 /** Drive에서 내보낸 CSV 텍스트를 LocalDocumentExtraction으로 변환 */
 export async function parseCsvText(csvText: string, sourceName: string): Promise<LocalDocumentExtraction> {
   const Papa = (await import('papaparse')).default
@@ -213,10 +224,332 @@ export async function parseCsvText(csvText: string, sourceName: string): Promise
     throw new Error(`CSV 파싱 실패: ${parsed.errors[0]?.message || '형식을 읽지 못했습니다.'}`)
   }
   const rows = Array.isArray(parsed.data) ? parsed.data : []
-  const table = rowsToTextBlocks(rows)
-  return {
-    documentType: 'csv',
-    sourceName: String(sourceName || '스프레드시트').trim() || '스프레드시트',
-    ...table,
+  return buildExtractionFromCsvRows(rows, sourceName)
+}
+
+/** GSheet/가계부 CSV(열 매칭) → 원장에 넣을 수 있는 `DocumentParseResult` 배열. 열이 안 맞으면 `null` */
+export function tryStructuredLedgerFromRows(
+  rows: string[][],
+  sourceName: string,
+): DocumentParseResult[] | null {
+  return tryStructuredLedgerFromRowsImpl(rows, sourceName)
+}
+
+export type GsheetImportResult = {
+  directItems: DocumentParseResult[] | null
+  extraction: LocalDocumentExtraction
+}
+
+/**
+ * Drive에서 내보낸 CSV: 구조화 파싱이 되면 `directItems`, 아니면 AI용 `extraction`만 씀.
+ * `parseCsvText`와 동일한 Papa 병합 규칙.
+ */
+export async function parseGoogleSpreadsheetCsvForImport(
+  csvText: string,
+  sourceName: string,
+): Promise<GsheetImportResult> {
+  const Papa = (await import('papaparse')).default
+  const parsed = Papa.parse<string[]>(csvText, { skipEmptyLines: 'greedy' })
+  if (parsed.errors.length && !parsed.data.length) {
+    throw new Error(`CSV 파싱 실패: ${parsed.errors[0]?.message || '형식을 읽지 못했습니다.'}`)
   }
+  const rows = Array.isArray(parsed.data) ? (parsed.data as string[][]) : []
+  const name = String(sourceName || '스프레드시트').trim() || '스프레드시트'
+  const extraction = buildExtractionFromCsvRows(rows, name)
+  const direct = tryStructuredLedgerFromRowsImpl(rows, name)
+  return {
+    directItems: direct && direct.length > 0 ? direct : null,
+    extraction,
+  }
+}
+
+// --- 구조화 가계부 (날짜·금액·적요 열 스코어) ---
+
+const PAD = (n: string) => String(Number(n)).padStart(2, '0')
+
+function parseLedgerDateCell(v: unknown): string | null {
+  if (v == null) return null
+  if (typeof v === 'number' && Number.isFinite(v) && v > 20000 && v < 100000) {
+    const d = new Date((v - 25569) * 86400 * 1000)
+    if (Number.isNaN(d.getTime())) return null
+    return `${d.getUTCFullYear()}-${PAD(String(d.getUTCMonth() + 1))}-${PAD(String(d.getUTCDate()))}`
+  }
+  const t = String(v).replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  const m4 = t.match(
+    /(\d{4})[-./년]\s*(\d{1,2})[-./월]?\s*(\d{1,2})(?:일)?/,
+  )
+  if (m4) {
+    return `${m4[1]}-${PAD(m4[2])}-${PAD(m4[3])}`
+  }
+  const m2 = t.match(
+    /(\d{2})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/,
+  )
+  if (m2) {
+    const y = Number(m2[1])
+    const fullY = y >= 50 ? 1900 + y : 2000 + y
+    return `${fullY}-${PAD(m2[2])}-${PAD(m2[3])}`
+  }
+  return null
+}
+
+function parseAmountFromCell(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.abs(v)
+  }
+  const s = String(v ?? '').trim()
+  if (!s) return 0
+  const cleaned = s.replace(/[,，]/g, '').replace(/[^\d.-]/g, '')
+  const n = Number(cleaned)
+  return Number.isFinite(n) && n > 0 ? Math.abs(n) : 0
+}
+
+function parseSignedAmountFromCell(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+    return v
+  }
+  const s0 = String(v).trim()
+  if (!s0) return null
+  const paren = /^\s*\(([\d,.\s]+)\)\s*$/.exec(s0)
+  const s = s0.replace(/[,，]/g, '')
+  const cleaned = s.replace(/[^\d.-]/g, '')
+  const n = Number(cleaned)
+  if (!Number.isFinite(n) || n === 0) return null
+  if (paren) return -Math.abs(n)
+  return n
+}
+
+type ColumnScores = { date: number; amount: number; out: number; inc: number; desc: number; cat: number; type: number }
+
+function scoreHeaderCellForLedger(cell: string): ColumnScores {
+  const c0 = String(cell).replace(/\s+/g, ' ').trim().toLowerCase()
+  const c = c0.normalize('NFKC')
+  const s: ColumnScores = { date: 0, amount: 0, out: 0, inc: 0, desc: 0, cat: 0, type: 0 }
+  if (!c) return s
+  if (/(잔액|잔고|balance)/.test(c) && !/금액|합계|거래|적요|내용/.test(c)) {
+    s.amount -= 3
+  }
+  if (/(날짜|일자|거래일|사용일|년월일|승인일|결제일)/.test(c) || c === 'date') s.date += 4
+  if (c.includes('출금') || (c.includes('지출') && !c.includes('수입') && !c.includes('지출/수입'))) s.out += 3
+  if (c.includes('입금') || (c.includes('수입') && !c.includes('지출') && c !== '지출/수입')) s.inc += 3
+  if ((c.includes('금액') || c.includes('합계') || c === 'amount' || c === '₩' || c === '￦') && !/잔/.test(c)) {
+    s.amount += 2
+  }
+  if (/(적요|내용|가맹점|상세|사용처|거래명|description|summary|note|노트)/.test(c)) s.desc += 3
+  if (c.includes('분류') || c.includes('카테고리') || c.includes('category') || c === '항목' || c === 'type') s.cat += 2
+  if (/(구분|유형|이체|transaction|거래구분|수지)/.test(c) || (c.length < 14 && c === 'type')) s.type += 2
+  if (c === '메모' || c === '비고') s.desc += 1
+  return s
+}
+
+type ColMap = {
+  date: number
+  amount: number
+  out: number
+  inc: number
+  desc: number
+  cat: number
+  type: number
+  totalScore: number
+}
+
+function pickColumnIndices(headerCells: string[]): ColMap | null {
+  if (!headerCells.length) return null
+  const scores: ColumnScores[] = headerCells.map(scoreHeaderCellForLedger)
+  const used = new Set<number>()
+  const take = (role: keyof ColumnScores) => {
+    let best = -1
+    let bestVal = 0.5
+    for (let j = 0; j < scores.length; j += 1) {
+      if (used.has(j)) continue
+      const v = scores[j][role]
+      if (v > bestVal) {
+        bestVal = v
+        best = j
+      }
+    }
+    if (best < 0) return -1
+    used.add(best)
+    return best
+  }
+  const date = take('date')
+  const out = take('out')
+  const inc = take('inc')
+  let amount = take('amount')
+  const type = take('type')
+  const desc = take('desc')
+  const cat = take('cat')
+  if (date < 0) return null
+  if (out < 0 && inc < 0 && amount < 0) {
+    let bestA = -1
+    let bestN = 0.5
+    for (let j = 0; j < scores.length; j += 1) {
+      if (j === date || j === desc || j === cat) continue
+      if (scores[j].amount + scores[j].out * 0.5 + scores[j].inc * 0.5 > bestN) {
+        bestN = scores[j].amount + scores[j].out * 0.5 + scores[j].inc * 0.5
+        bestA = j
+      }
+    }
+    if (bestA < 0) {
+      for (let j = 0; j < headerCells.length; j += 1) {
+        if (j === date || j === desc || j === cat) continue
+        const h = String(headerCells[j] || '')
+          .toLowerCase()
+        if (/(잔액|잔고|번호|no)/.test(h)) continue
+        if (scoreHeaderCellForLedger(h).date > 0) continue
+        bestA = j
+        break
+      }
+    }
+    amount = bestA
+  }
+  const hasSplit = out >= 0 && inc >= 0
+  if (!hasSplit && amount < 0) return null
+  let total = 0
+  if (date >= 0) total += scores[date].date
+  if (hasSplit) {
+    if (out >= 0) total += Math.max(2, scores[out].out)
+    if (inc >= 0) total += Math.max(2, scores[inc].inc)
+  } else if (amount >= 0) {
+    total += Math.max(1, scores[amount].amount)
+  }
+  if (desc >= 0) total += 1
+  if (cat >= 0) total += 1
+  if (type >= 0) total += 0.5
+  if (total < 4) return null
+  return {
+    date,
+    out,
+    inc,
+    amount,
+    desc,
+    cat,
+    type,
+    totalScore: total,
+  }
+}
+
+function isIncomeTypeCell(s: string): boolean {
+  const t = s.replace(/\s+/g, ' ').trim()
+  if (!t) return false
+  if (/^(수입|입금|환급|이자|급여|plus|income|credit)/i.test(t)) return true
+  if (/^(지출|출금|expense|debit)/i.test(t)) return false
+  if (/(수입|입금|환급|급여)/.test(t) && !/지출|출금/.test(t)) return true
+  return false
+}
+
+function tryStructuredLedgerFromRowsImpl(
+  rows: string[][],
+  sourceName: string,
+): DocumentParseResult[] | null {
+  const cleanRows = rows
+    .map((row) => row.map((c) => normalizeCell(c)))
+    .filter((row) => row.some(Boolean))
+  if (cleanRows.length < 2) return null
+
+  let best: { headerIdx: number; map: ColMap } | null = null
+  for (let hi = 0; hi < Math.min(4, cleanRows.length); hi += 1) {
+    if (!looksLikeHeaderRow(cleanRows[hi])) continue
+    const m = pickColumnIndices(cleanRows[hi])
+    if (m) {
+      if (!best || m.totalScore > best.map.totalScore) {
+        best = { headerIdx: hi, map: m }
+      }
+    }
+  }
+  if (!best) return null
+
+  const { headerIdx, map: col } = best
+  const dataStart = headerIdx + 1
+  const results: DocumentParseResult[] = []
+  const hasSplit = col.out >= 0 && col.inc >= 0
+  const label = String(sourceName || '스프레드시트').trim() || '스프레드시트'
+
+  for (let ri = dataStart; ri < cleanRows.length; ri += 1) {
+    const row = cleanRows[ri]
+    const dStr = row[col.date]
+    const ymd = parseLedgerDateCell(dStr)
+    if (!ymd) continue
+
+    let amountAbs = 0
+    let isIncome = false
+
+    if (hasSplit) {
+      const o = parseAmountFromCell(row[col.out])
+      const ins = parseAmountFromCell(row[col.inc])
+      if (o > 0 && ins > 0) continue
+      if (o > 0) {
+        amountAbs = o
+        isIncome = false
+      } else if (ins > 0) {
+        amountAbs = ins
+        isIncome = true
+      } else {
+        continue
+      }
+    } else {
+      const rawCell = col.amount >= 0 ? row[col.amount] : undefined
+      const sRaw = String(rawCell ?? '').trim()
+      const sn = parseSignedAmountFromCell(rawCell)
+      if (sn === null) continue
+      amountAbs = Math.abs(sn)
+      const typeCell = col.type >= 0 ? String(row[col.type] || '').trim() : ''
+      if (typeCell) {
+        if (/(지출|출금|debit|expense|체크|이체\\s*출금)/i.test(typeCell) && !/(수입|입금|환급|급여|이자)/.test(typeCell)) {
+          isIncome = false
+        } else if (isIncomeTypeCell(typeCell)) {
+          isIncome = true
+        } else {
+          isIncome = sn > 0
+        }
+      } else if (sRaw.startsWith('(') || sRaw.startsWith('-') || sRaw.startsWith('－') || sRaw.startsWith('–') || sRaw.startsWith('—') || (typeof sn === 'number' && sn < 0)) {
+        isIncome = false
+      } else if (sRaw.startsWith('+') || sRaw.startsWith('＋')) {
+        isIncome = true
+      } else {
+        const catH = [col.cat >= 0 ? row[col.cat] : '', col.desc >= 0 ? row[col.desc] : '']
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+          .join(' ')
+        isIncome = /(환급|부수입|급여|이자|캐시백|보너스|배당|용돈|이체\\s*입금|캐시|환불|적립|수입|입금|이체\\s*수입|용돈)/.test(
+          catH,
+        ) && !/(쇼핑|식비|교통|마트|편|카페|구독|결제|의료|주유|생활|의류|뷰티|숙박)/.test(catH)
+      }
+    }
+
+    if (amountAbs <= 0) continue
+
+    const descText =
+      (col.desc >= 0 && String(row[col.desc] || '').trim()) ||
+      (col.cat >= 0 && !hasSplit && String(row[col.cat] || '').trim()) ||
+      ''
+    const rawCat = col.cat >= 0 ? String(row[col.cat] || '').trim() : ''
+    const merchant = descText || rawCat || `${label} 항목`
+
+    let category = '기타'
+    if (isIncome) {
+      if (rawCat) category = /급여|이자|환급|수입|부수입|기타|입금|plus/i.test(rawCat) ? rawCat : `기타 수입`
+      else if (hasSplit) category = '기타 수입'
+      else if (String(row[col.type] || '').toLowerCase().includes('환급')) category = '환급'
+      else category = '기타 수입'
+    } else {
+      category = rawCat || '기타 지출'
+    }
+
+    const reasoning = `스프레드시트 열 기준: ${isIncome ? '수입' : '지출'} (자동) · ${String(dStr).trim()}`
+
+    results.push({
+      merchant,
+      date: ymd,
+      amount: amountAbs,
+      category,
+      reasoning: reasoning.slice(0, 200),
+      confidence: 0.9,
+      sourceRef: `${label}:row${ri + 1}`,
+    })
+  }
+
+  if (results.length < 1) return null
+  return results
 }

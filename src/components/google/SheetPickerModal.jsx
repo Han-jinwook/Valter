@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useUIStore } from '../../stores/uiStore'
 import { listSpreadsheetFiles, exportSheetAsCsv } from '../../lib/googleDriveSync'
-import { parseCsvText } from '../../lib/documentParsers'
+import { parseGoogleSpreadsheetCsvForImport } from '../../lib/documentParsers'
 import { buildDocumentChunks } from '../../lib/documentChunking'
 import { analyzeDocumentChunks } from '../../lib/visionAIEngine'
 
@@ -56,20 +56,28 @@ export default function SheetPickerModal({ isOpen, onClose }) {
       const csvText = await exportSheetAsCsv(sheet.id)
 
       setProgressLabel('데이터 파싱 중...')
-      const extraction = await parseCsvText(csvText, sheet.name)
+      const { directItems, extraction } = await parseGoogleSpreadsheetCsvForImport(csvText, sheet.name)
 
-      const chunks = buildDocumentChunks(extraction)
-      if (!chunks.length) {
-        throw new Error('분석할 데이터 행이 없습니다. 스프레드시트에 내용이 있는지 확인하세요.')
+      let items
+      if (directItems && directItems.length) {
+        setProgressTotal(1)
+        setProgressCurrent(1)
+        setProgressLabel('표 구조(날짜·금액·적요)로 읽는 중…')
+        items = directItems
+      } else {
+        const chunks = buildDocumentChunks(extraction)
+        if (!chunks.length) {
+          throw new Error('분석할 데이터 행이 없습니다. 스프레드시트에 내용이 있는지 확인하세요.')
+        }
+
+        setProgressTotal(chunks.length)
+        setProgressLabel(`AI 분석 중... (0 / ${chunks.length} 청크)`)
+
+        items = await analyzeDocumentChunks(chunks, (completed, total) => {
+          setProgressCurrent(completed)
+          setProgressLabel(`AI 분석 중... (${completed} / ${total} 청크)`)
+        })
       }
-
-      setProgressTotal(chunks.length)
-      setProgressLabel(`AI 분석 중... (0 / ${chunks.length} 청크)`)
-
-      const items = await analyzeDocumentChunks(chunks, (completed, total) => {
-        setProgressCurrent(completed)
-        setProgressLabel(`AI 분석 중... (${completed} / ${total} 청크)`)
-      })
 
       const docId = `gsheet-${sheet.id}-${Date.now()}`
       const result = await ingestDocumentAnalysisBatch(docId, sheet.name, items)
@@ -143,7 +151,7 @@ export default function SheetPickerModal({ isOpen, onClose }) {
               ) : (
                 <>
                   <p className="text-xs text-on-surface-variant mb-3">
-                    파일을 선택하면 첫 번째 시트를 CSV로 변환해 AI가 분석합니다.
+                    첫 번째 시트만 CSV로 가져옵니다. 날짜·금액·적요(또는 분류) 열이 있으면 표 구조로 바로 읽고, 그렇지 않으면 AI로 분석합니다.
                   </p>
                   <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
                     {sheets.map((sheet) => (
