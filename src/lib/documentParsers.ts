@@ -353,8 +353,16 @@ function scoreHeaderCellForLedger(cell: string): ColumnScores {
     s.amount -= 3
   }
   if (/(날짜|일자|거래일|사용일|년월일|승인일|결제일)/.test(c) || c === 'date') s.date += 4
-  if (c.includes('출금') || (c.includes('지출') && !c.includes('수입') && !c.includes('지출/수입'))) s.out += 3
-  if (c.includes('입금') || (c.includes('수입') && !c.includes('지출') && c !== '지출/수입')) s.inc += 3
+  if (/(지출\s*\(원\)|^지출\(원\)|지출액|출금|출금액)/.test(c) && !/수입/.test(c)) {
+    s.out += 4
+  } else if (c.includes('지출') && !c.includes('수입') && !c.includes('지출/수입')) {
+    s.out += 3
+  }
+  if (/(수입\s*\(원\)|^수입\(원\)|수입액|입금|입금액)/.test(c) && !/지출/.test(c)) {
+    s.inc += 4
+  } else if (c.includes('입금') || (c.includes('수입') && !c.includes('지출') && c !== '지출/수입')) {
+    s.inc += 3
+  }
   if ((c.includes('금액') || c.includes('합계') || c === 'amount' || c === '₩' || c === '￦') && !/잔/.test(c)) {
     s.amount += 2
   }

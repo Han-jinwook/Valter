@@ -340,27 +340,86 @@ function buildFactLineForTx(tx: VaultTransaction): string {
   return parts.length ? `${parts.join(', ')}.` : ''
 }
 
+/** 시트/파싱에 계정 문자열이 있어도, 구체 은행·카드명이 없으면 한 번 더 묻는다 (채팅 N건 감소용) */
+function needsAccountClarification(tx: Pick<VaultTransaction, 'account'>): boolean {
+  const a = String(tx.account || '').trim()
+  if (!a) return true
+  if (/계정\s*미|미지정|미입력|해당없|해당\s*없|없음|^\s*[-–—]\s*$/.test(a)) return true
+  const compact = a.replace(/\s+/g, '')
+  if (/^(은행이체|계좌이체|이체|송금|미지정|미입력)$/.test(compact)) return true
+  if (/^은행이체$|^계좌이체$/i.test(a.replace(/\s+/g, ' ').trim())) return true
+  if (/(은행이체|계좌이체)/.test(a)) {
+    if (
+      /(국민|신한|하나|우리|농협|농협은행|IBK|ibk|기업|KDB|iM|KDB|SC|씨티|씨티은행|토스|카카오|Kakao|KB|Kbank|케이뱅|새마을|수협|대구|부산|경남|전북|우체|저축|제주|광주|신협|지역|KDB|iM|hyundai|lotte|samsung|nh|keb|hana|shinhan|woori|pay|페이|IBK|하나|기업은행|신한은행|국민은행)/i.test(
+        a,
+      )
+    ) {
+      return false
+    }
+    return true
+  }
+  return false
+}
+
 function buildAccountClarifyMessage(
   tx: VaultTransaction,
   knownAccounts: string[],
 ): Omit<ChatMessage, 'id' | 'time'> {
   const factLine = buildFactLineForTx(tx)
   const category = String(tx.category || '').trim() || '기타'
+  const isIncome = tx.type === 'INCOME' || Number(tx.amount) > 0
+  const acc = String(tx.account || '').trim()
+  const bankVague =
+    Boolean(acc) &&
+    (/^(은행이체|계좌이체|이체|송금)$/i.test(acc.replace(/\s/g, '')) ||
+      (/(은행이체|계좌이체)/.test(acc) &&
+        !/(국민|신한|하나|우리|농협|IBK|ibk|기업|KDB|iM|SC|씨티|토스|카카오|KB|Kbank|새마을|수협|대구|부산|경남|전북|우체|저축|제주|광주|신협|씨티은행|하나은행|기업은행|신한은행|국민은행|NH|KEB|hana|shinhan|woori|hyundai|lotte|samsung|pay|페이|농협|kakao|Kakao|ibk)/i.test(
+          acc,
+        )))
+  const question = (() => {
+    if (!acc) {
+      return isIncome
+        ? `**어느 통장·계정**으로 입금·수취되었는지 알려 주세요. (현금/카드/통장명)`
+        : `**어느 카드·현금·통장**으로 결제·출금하셨는지 알려 주세요.`
+    }
+    if (bankVague && isIncome) {
+      return `시트에「${acc}」로만 되어 있어요. **어느 은행·통장(계정)**으로 기록할까요? (예: 국민 급여통장, 신한 입출금)`
+    }
+    if (bankVague && !isIncome) {
+      return `「${acc}」이(가) **어느 통장·카드·현금**인지 구체적으로 알려 주세요.`
+    }
+    if (isIncome) {
+      return `**어느 통장·계정**으로 입금·수취되었는지 알려 주세요. (현금/카드/통장명)`
+    }
+    return `**어느 카드·현금·통장**으로 결제·출금하셨는지 알려 주세요.`
+  })()
   return {
     role: 'ai',
     type: 'account_confirm',
-    text: `${factLine}\n결제는 현금/카드/통장 중 무엇이었나요?`,
+    text: `${factLine}\n${question}`,
     txId: Number(tx.id),
     options: [{ label: category, category }],
     accountOptions: buildAccountOptions([String(tx.account || ''), ...knownAccounts]),
   }
 }
 
-function buildDocumentSummaryText(sourceLabel: string, insertedCount: number, reviewCount: number) {
-  if (reviewCount > 0) {
-    return `"${sourceLabel}"에서 ${insertedCount}건을 검토 대기 상태로 반영했어요. 우선 ${reviewCount}건만 빠르게 확인해 주세요.`
+function buildDocumentSummaryText(
+  sourceLabel: string,
+  insertedCount: number,
+  reviewCount: number,
+  autoConfirmedCount?: number,
+) {
+  const auto = autoConfirmedCount ?? 0
+  if (reviewCount > 0 && auto > 0) {
+    return `"${sourceLabel}"에서 총 ${insertedCount}건을 반영했어요. ${auto}건은 시트의 결제수단으로 **바로 확정**했고, **${reviewCount}건**만 아래에서 계정을 보완해 주세요. (나머지는 원장·목록에서 확인하시면 돼요.)`
   }
-  return `"${sourceLabel}"에서 ${insertedCount}건을 검토 대기 상태로 반영했어요.`
+  if (reviewCount > 0) {
+    return `"${sourceLabel}"에서 ${insertedCount}건을 반영했어요. **${reviewCount}건**만 아래에서 계정을 확인해 주세요.`
+  }
+  if (auto > 0) {
+    return `"${sourceLabel}"에서 ${insertedCount}건을 시트의 결제수단·분류로 **모두 확정**해 두었어요. 원장·목록에서 점검해 주세요.`
+  }
+  return `"${sourceLabel}"에서 ${insertedCount}건을 반영했어요.`
 }
 
 function computeNextInternalId(
@@ -396,7 +455,9 @@ function buildPendingTxFromParsed(input: {
   const merchant = String(input.merchant || '가맹점 미확인').trim() || '가맹점 미확인'
   const normalizedCategory = normalizeCategoryLabel(input.category, merchant)
   const type: Transaction['type'] =
-    /수입|환급|입금/.test(normalizedCategory) ? 'INCOME' : 'EXPENSE'
+    /수입|환급|입금|급여|부수입|용돈|보너스|배당|환불|캐시백|적립/.test(normalizedCategory)
+      ? 'INCOME'
+      : 'EXPENSE'
   const amountAbs = Math.abs(Number(input.amount || 0))
   const signedAmount = type === 'INCOME' ? amountAbs : -amountAbs
   const isTax = /세금|국세청|공과금/.test(`${normalizedCategory} ${merchant}`)
@@ -957,8 +1018,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       }
     }
 
-    const nextTxs = fresh.map((item) =>
-      buildPendingTxFromParsed({
+    const nextTxs = fresh.map((item) => {
+      const row = buildPendingTxFromParsed({
         merchant: item.merchant,
         date: item.date,
         amount: item.amount,
@@ -969,8 +1030,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         sourceRef: item.sourceMessageId,
         location: 'Gmail 자동 수집',
       })
-    )
-    const reviewTargets = nextTxs.slice(0, 3)
+      return {
+        ...row,
+        status: needsAccountClarification(row) ? ('PENDING' as const) : ('CONFIRMED' as const),
+      }
+    })
+    const needList = nextTxs.filter(needsAccountClarification)
+    const autoCount = nextTxs.length - needList.length
+    const maxPrompts = autoCount > 0 ? 1 : Math.min(needList.length, 3)
+    const reviewTargets = needList.slice(0, maxPrompts)
 
     await putLedgerLinesBatch(nextTxs)
     set((s) => ({
@@ -1054,8 +1122,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       }
     }
 
-    const nextTxs = safeItems.map((item, index) =>
-      buildPendingTxFromParsed({
+    const nextTxs = safeItems.map((item, index) => {
+      const row = buildPendingTxFromParsed({
         merchant: item.merchant,
         date: item.date,
         amount: item.amount,
@@ -1069,8 +1137,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         sourceRef: item.sourceRef || `${documentId}:${index + 1}`,
         location: sourceLabel,
       })
-    )
-    const reviewTargets = nextTxs.slice(0, 3)
+      return {
+        ...row,
+        status: needsAccountClarification(row) ? ('PENDING' as const) : ('CONFIRMED' as const),
+      }
+    })
+    const needList = nextTxs.filter(needsAccountClarification)
+    const autoCount = nextTxs.length - needList.length
+    const maxAccountPrompts = autoCount > 0 ? 1 : Math.min(needList.length, 3)
+    const reviewTargets = needList.slice(0, maxAccountPrompts)
 
     await putLedgerLinesBatch(nextTxs)
     set((s) => ({
@@ -1090,7 +1165,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           id: ++_id,
           role: 'ai',
           type: 'text',
-          text: buildDocumentSummaryText(sourceLabel, nextTxs.length, reviewTargets.length),
+          text: buildDocumentSummaryText(
+            sourceLabel,
+            nextTxs.length,
+            reviewTargets.length,
+            autoCount,
+          ),
           time: timeNow(),
         },
         ...reviewTargets.map((tx) => ({
