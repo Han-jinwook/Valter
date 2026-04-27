@@ -314,6 +314,48 @@ function buildAccountOptions(knownAccounts: string[]): ConfirmOption[] {
   ]
 }
 
+function hasMeaningfulCategory(tx: Pick<VaultTransaction, 'category'>): boolean {
+  return Boolean(String(tx?.category || '').trim())
+}
+
+function toFactDate(dateText: string): string {
+  const raw = String(dateText || '').trim()
+  if (!raw) return todayDate().replace(/\./g, '-')
+  if (/^\d{4}\.\d{2}\.\d{2}$/.test(raw)) return raw.replace(/\./g, '-')
+  return raw
+}
+
+function toWon(amount: number): string {
+  return `₩${Math.abs(Number(amount) || 0).toLocaleString('ko-KR')}`
+}
+
+function buildFactLineForTx(tx: VaultTransaction): string {
+  const parts = [
+    toFactDate(tx.date),
+    String(tx.name || tx.merchant || '').trim(),
+    String(tx.userMemo || '').trim(),
+    toWon(tx.amount),
+    String(tx.category || '').trim(),
+  ].filter((v) => Boolean(String(v || '').trim()))
+  return parts.length ? `${parts.join(', ')}.` : ''
+}
+
+function buildAccountClarifyMessage(
+  tx: VaultTransaction,
+  knownAccounts: string[],
+): Omit<ChatMessage, 'id' | 'time'> {
+  const factLine = buildFactLineForTx(tx)
+  const category = String(tx.category || '').trim() || '기타'
+  return {
+    role: 'ai',
+    type: 'account_confirm',
+    text: `${factLine}\n결제는 현금/카드/통장 중 무엇이었나요?`,
+    txId: Number(tx.id),
+    options: [{ label: category, category }],
+    accountOptions: buildAccountOptions([String(tx.account || ''), ...knownAccounts]),
+  }
+}
+
 function buildDocumentSummaryText(sourceLabel: string, insertedCount: number, reviewCount: number) {
   if (reviewCount > 0) {
     return `"${sourceLabel}"에서 ${insertedCount}건을 검토 대기 상태로 반영했어요. 우선 ${reviewCount}건만 빠르게 확인해 주세요.`
@@ -688,26 +730,38 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   askAboutTransaction: (txId) => {
     const tx = get().transactions.find((t) => t.id === txId)
     if (!tx || tx.status !== 'PENDING') return
-    const alreadyAsked = get().messages.some((m) => m.type === 'confirm' && m.txId === Number(txId) && !m.resolved)
+    const alreadyAsked = get().messages.some(
+      (m) =>
+        (m.type === 'confirm' || m.type === 'account_confirm') &&
+        m.txId === Number(txId) &&
+        !m.resolved
+    )
     if (alreadyAsked) return
 
+    const categoryLocked = hasMeaningfulCategory(tx)
     set((s) => ({
       messages: [
         ...s.messages,
-        {
-          id: ++_id,
-          role: 'ai',
-          type: 'confirm',
-          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString()} 내역이 있네요. 이 송금은 어떤 분류인가요?`,
-          txId: Number(txId),
-          options: [
-            { label: '축의금', category: '경조사' },
-            { label: '더치페이', category: '식비' },
-            { label: '개인 송금', category: '이체' },
-            { label: '직접입력…', category: '__CUSTOM__' },
-          ],
-          time: timeNow(),
-        },
+        categoryLocked
+          ? {
+              id: ++_id,
+              ...buildAccountClarifyMessage(tx, s.knownAccounts),
+              time: timeNow(),
+            }
+          : {
+              id: ++_id,
+              role: 'ai',
+              type: 'confirm',
+              text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString()} 내역이 있네요. 이 송금은 어떤 분류인가요?`,
+              txId: Number(txId),
+              options: [
+                { label: '축의금', category: '경조사' },
+                { label: '더치페이', category: '식비' },
+                { label: '개인 송금', category: '이체' },
+                { label: '직접입력…', category: '__CUSTOM__' },
+              ],
+              time: timeNow(),
+            },
       ],
     }))
   },
@@ -911,7 +965,6 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         location: 'Gmail 자동 수집',
       })
     )
-    const knownAccounts = get().knownAccounts
     const reviewTargets = nextTxs.slice(0, 3)
 
     await putLedgerLinesBatch(nextTxs)
@@ -921,12 +974,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         ...s.messages,
         ...reviewTargets.map((tx) => ({
           id: ++_id,
-          role: 'ai' as const,
-          type: 'account_confirm' as const,
-          text: `${tx.date} Gmail 영수증 "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역을 원장에 반영했어요. 항목과 계정을 함께 알려주세요.`,
-          txId: Number(tx.id),
-          options: buildConfirmOptionsForTx(tx),
-          accountOptions: buildAccountOptions(knownAccounts),
+          ...buildAccountClarifyMessage(tx, s.knownAccounts),
           time: timeNow(),
         })),
       ],
@@ -1001,7 +1049,6 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       }
     }
 
-    const knownAccounts = get().knownAccounts
     const nextTxs = safeItems.map((item, index) =>
       buildPendingTxFromParsed({
         merchant: item.merchant,
@@ -1042,12 +1089,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         },
         ...reviewTargets.map((tx) => ({
           id: ++_id,
-          role: 'ai' as const,
-          type: 'account_confirm' as const,
-          text: `${tx.date} "${tx.name}" ₩${Math.abs(tx.amount).toLocaleString('ko-KR')} 내역을 반영했어요. 항목과 계정을 함께 확인해 주세요.`,
-          txId: Number(tx.id),
-          options: buildConfirmOptionsForTx(tx),
-          accountOptions: buildAccountOptions([String(tx.account || ''), ...knownAccounts]),
+          ...buildAccountClarifyMessage(tx, s.knownAccounts),
           time: timeNow(),
         })),
       ],
@@ -1323,24 +1365,31 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     })
 
     await putLedgerLine(newTx)
+    const categoryLocked = hasMeaningfulCategory(newTx)
     set((s) => ({
       transactions: [newTx, ...s.transactions],
       messages: [
         ...s.messages,
-        {
-          id: ++_id,
-          role: 'ai',
-          type: 'confirm',
-          text: `${newTx.date} "${newTx.name}" ₩${Math.abs(newTx.amount).toLocaleString('ko-KR')} 내역을 분류해 주세요.`,
-          txId: Number(newTx.id),
-          options: [
-            { label: '식비', category: '식비' },
-            { label: '교통비', category: '교통비' },
-            { label: '생활비', category: '생활비' },
-            { label: '직접입력…', category: '__CUSTOM__' },
-          ],
-          time: timeNow(),
-        },
+        categoryLocked
+          ? {
+              id: ++_id,
+              ...buildAccountClarifyMessage(newTx, s.knownAccounts),
+              time: timeNow(),
+            }
+          : {
+              id: ++_id,
+              role: 'ai',
+              type: 'confirm',
+              text: `${newTx.date} "${newTx.name}" ₩${Math.abs(newTx.amount).toLocaleString('ko-KR')} 내역을 분류해 주세요.`,
+              txId: Number(newTx.id),
+              options: [
+                { label: '식비', category: '식비' },
+                { label: '교통비', category: '교통비' },
+                { label: '생활비', category: '생활비' },
+                { label: '직접입력…', category: '__CUSTOM__' },
+              ],
+              time: timeNow(),
+            },
       ],
     }))
     void flushLocalVaultSnapshotToKv().catch(() => {})

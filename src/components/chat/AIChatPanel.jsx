@@ -645,6 +645,16 @@ function ChatBubble({
     }
   }, [accountInput, msg.type, selectedCategory, tx?.account, tx?.category])
 
+  useEffect(() => {
+    if (msg.type !== 'account_confirm') return
+    const options = Array.isArray(msg.options) ? msg.options : []
+    const isLocked = options.length === 1 && options[0]?.category !== '__CUSTOM__'
+    if (!isLocked) return
+    const only = String(options[0]?.category || '').trim()
+    if (!only) return
+    if (selectedCategory !== only) setSelectedCategory(only)
+  }, [msg.type, msg.options, selectedCategory])
+
   const submitCustomCategory = () => {
     const next = customCategory.trim()
     if (!next || !msg.txId) return
@@ -756,7 +766,11 @@ function ChatBubble({
   if (msg.type === 'account_confirm') {
     const isResolved = msg.resolved || (tx?.status === 'CONFIRMED' && Boolean(tx?.account))
     const categoryOptions = Array.isArray(msg.options) ? msg.options : []
-    const canSubmit = Boolean(selectedCategory.trim() && accountInput.trim() && msg.txId)
+    const categoryLocked = categoryOptions.length === 1 && categoryOptions[0]?.category !== '__CUSTOM__'
+    const effectiveCategory = categoryLocked
+      ? String(categoryOptions[0]?.category || '').trim()
+      : selectedCategory.trim()
+    const canSubmit = Boolean(effectiveCategory && accountInput.trim() && msg.txId)
     return (
       <div className="flex flex-col gap-1 max-w-[94%]">
         <div className="flex items-end gap-1.5">
@@ -767,61 +781,70 @@ function ChatBubble({
         </div>
         {!isResolved ? (
           <>
-            <div className="ml-1 mt-1 text-[11px] font-semibold text-on-surface-variant">항목</div>
-            <div className="flex flex-wrap gap-2 mt-1 ml-1">
-              {categoryOptions.map((opt) => (
-                <button
-                  key={opt.label}
-                  onClick={() => {
-                    if (opt.category === '__CUSTOM__') {
-                      setIsCustomInputOpen(true)
-                      return
-                    }
-                    setSelectedCategory(opt.category)
-                    setIsCustomInputOpen(false)
-                    setCustomCategory('')
-                  }}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all duration-200 active:scale-95 ${
-                    selectedCategory === opt.category
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-primary/5 text-primary border-primary/15 hover:bg-primary hover:text-white'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            {isCustomInputOpen && (
-              <div className="mt-2 ml-1 flex items-center gap-2">
-                <input
-                  autoFocus
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const next = customCategory.trim()
-                      if (!next || !msg.txId) return
-                      setSelectedCategory(next)
-                      setIsCustomInputOpen(false)
-                      setCustomCategory('')
-                    }
-                    if (e.key === 'Escape') setIsCustomInputOpen(false)
-                  }}
-                  placeholder="계정명 입력 (예: 통장1)"
-                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-                <button
-                  onClick={() => {
-                    const next = customCategory.trim()
-                    if (!next) return
-                    setSelectedCategory(next)
-                    setIsCustomInputOpen(false)
-                  }}
-                  className="px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-bold"
-                >
-                  확인
-                </button>
+            {categoryLocked ? (
+              <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-primary font-semibold">
+                <span className="material-symbols-outlined text-sm">check_circle</span>
+                항목 고정: {effectiveCategory}
               </div>
+            ) : (
+              <>
+                <div className="ml-1 mt-1 text-[11px] font-semibold text-on-surface-variant">항목</div>
+                <div className="flex flex-wrap gap-2 mt-1 ml-1">
+                  {categoryOptions.map((opt) => (
+                    <button
+                      key={opt.label}
+                      onClick={() => {
+                        if (opt.category === '__CUSTOM__') {
+                          setIsCustomInputOpen(true)
+                          return
+                        }
+                        setSelectedCategory(opt.category)
+                        setIsCustomInputOpen(false)
+                        setCustomCategory('')
+                      }}
+                      className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all duration-200 active:scale-95 ${
+                        selectedCategory === opt.category
+                          ? 'bg-primary text-white border-primary'
+                          : 'bg-primary/5 text-primary border-primary/15 hover:bg-primary hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {isCustomInputOpen && (
+                  <div className="mt-2 ml-1 flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const next = customCategory.trim()
+                          if (!next || !msg.txId) return
+                          setSelectedCategory(next)
+                          setIsCustomInputOpen(false)
+                          setCustomCategory('')
+                        }
+                        if (e.key === 'Escape') setIsCustomInputOpen(false)
+                      }}
+                      placeholder="계정명 입력 (예: 통장1)"
+                      className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <button
+                      onClick={() => {
+                        const next = customCategory.trim()
+                        if (!next) return
+                        setSelectedCategory(next)
+                        setIsCustomInputOpen(false)
+                      }}
+                      className="px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-bold"
+                    >
+                      확인
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             <div className="ml-1 mt-3 text-[11px] font-semibold text-on-surface-variant">계정</div>
             {liveAccountOptions.length > 0 ? (
@@ -847,14 +870,14 @@ function ChatBubble({
                 onChange={(e) => setAccountInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && canSubmit) {
-                    onCompleteReview(String(msg.txId), selectedCategory.trim(), accountInput.trim())
+                    onCompleteReview(String(msg.txId), effectiveCategory, accountInput.trim())
                   }
                 }}
                 placeholder="계정명 직접입력 (예: 통장1, 현대카드)"
                 className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               <button
-                onClick={() => onCompleteReview(String(msg.txId), selectedCategory.trim(), accountInput.trim())}
+                onClick={() => onCompleteReview(String(msg.txId), effectiveCategory, accountInput.trim())}
                 disabled={!canSubmit}
                 className="px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-bold disabled:opacity-50"
               >

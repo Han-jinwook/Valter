@@ -12,12 +12,11 @@ export function buildFullBackupSnapshot(): VaultBackupSnapshot {
 }
 
 /**
- * 로컬 `kv` 단일 키에 쓰는 용도: `transactions`는 `ledger_lines` IDB에만 두고 KV 용량·직렬화 비용을 줄인다.
- * Drive/내보내기 백업은 `buildFullBackupSnapshot()`(전체 거래 포함)을 사용할 것.
+ * 로컬 `kv` 단일 키 저장용.
+ * `ledger_lines`를 원천으로 사용하더라도, 부트스트랩/복구 실패 시 데이터 유실을 막기 위해
+ * transactions를 함께 보관한다.
+ * Drive/내보내기 백업은 `buildFullBackupSnapshot()`을 사용한다.
  */
 export function buildLocalKvSnapshot(): VaultBackupSnapshot {
-  return {
-    ...buildFullBackupSnapshot(),
-    transactions: [],
-  }
+  return buildFullBackupSnapshot()
 }
