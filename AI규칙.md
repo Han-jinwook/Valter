@@ -36,6 +36,7 @@
   - intent enum: `create_entry | delete | query | update | analyze | visualize | chat`
   - `create_entry`일 때만 Structured Output 게이트로 진입
   - router 실패/파싱 실패 시 안전하게 `chat`으로 복귀(기존 루프 유지)
+  - delete/query/update/analyze/visualize intent는 메인 프롬프트 전에 **intent override 시스템 메시지**를 주입해 해당 툴 선호를 강제한다.
 - Structured Output 게이트(`create_entry` 전용):
   - `is_financial_data=false`면 일반 대화/조회 흐름으로 보낸다.
   - `is_financial_data=true`인데 필수4 누락이면 `is_complete=false` + `missing_fields`로 되묻는다.
@@ -67,6 +68,7 @@
 ### 1-5. 조회/삭제/분석 도구 규칙
 
 - `delete/query/update/analyze/visualize` intent는 Structured 등록 게이트를 거치지 않고 기존 tool-agent 루프에서 처리한다.
+- 특히 `delete` intent는 `query_ledger -> delete_ledger(반복)` 순서를 우선 강제하고, 출처 힌트(샘플/시트/가져오기)는 `location` 필터 활용을 우선한다.
 - `query_ledger`: 기간/분류/계정/가맹 + `location`(가져오기 출처) 필터 지원.
 - `delete_ledger`: 1건 삭제 도구. 다건 삭제는 `query_ledger`로 id 목록 확보 후 반복 호출.
 - `analyze_category_spending`: 카테고리 합산/순위 질문 전담(직접 계산 금지).

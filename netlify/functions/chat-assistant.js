@@ -313,6 +313,53 @@ async function runIntentRouter(apiKey, userText) {
   }
 }
 
+function buildIntentOverrideSystemMessage(intent, userText) {
+  const text = String(userText || '').slice(0, 400)
+  if (intent === 'delete') {
+    return {
+      role: 'system',
+      content: `【라우팅 오버라이드: 삭제 요청】이번 사용자 발화는 삭제 의도다.
+- 반드시 도구를 먼저 사용한다: query_ledger -> delete_ledger(필요 횟수만큼 반복)
+- "다른 방 전달" 또는 이동 링크 출력 금지
+- "입력한/가져온/샘플/시트" 같은 출처 힌트가 있으면 query_ledger에서 location 필터를 우선 활용
+- 사용자 발화: ${text}`,
+    }
+  }
+  if (intent === 'query') {
+    return {
+      role: 'system',
+      content: `【라우팅 오버라이드: 조회 요청】이번 사용자 발화는 조회 의도다.
+- 반드시 query_ledger(또는 분석이면 analyze_category_spending)를 먼저 호출
+- 사용자 발화: ${text}`,
+    }
+  }
+  if (intent === 'update') {
+    return {
+      role: 'system',
+      content: `【라우팅 오버라이드: 수정 요청】이번 사용자 발화는 수정 의도다.
+- query_ledger로 대상 식별 후 update_ledger 호출
+- 사용자 발화: ${text}`,
+    }
+  }
+  if (intent === 'analyze') {
+    return {
+      role: 'system',
+      content: `【라우팅 오버라이드: 분석 요청】이번 사용자 발화는 분석 의도다.
+- 반드시 analyze_category_spending을 먼저 호출
+- 사용자 발화: ${text}`,
+    }
+  }
+  if (intent === 'visualize') {
+    return {
+      role: 'system',
+      content: `【라우팅 오버라이드: 시각화 요청】이번 사용자 발화는 시각화 의도다.
+- 반드시 render_visualization을 먼저 호출
+- 사용자 발화: ${text}`,
+    }
+  }
+  return null
+}
+
 function loadApiKey() {
   const envKey = process.env.OPENAI_API_KEY
   if (envKey) return envKey
@@ -690,9 +737,14 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
     : null
 
   try {
+    let routedIntent = 'chat'
+    let intentOverrideMessage = null
+
     // 1) 지기방 전용: LLM intent-router → create_entry만 Structured 게이트
     if (tailMessage?.role === 'user' && latestUserText) {
       const route = await runIntentRouter(apiKey, latestUserText)
+      routedIntent = route.intent || 'chat'
+      intentOverrideMessage = buildIntentOverrideSystemMessage(routedIntent, latestUserText)
       if (route.intent === 'create_entry') {
         const structured = await runStructuredEntryParser(apiKey, latestUserText, dbContext)
         if (structured?.is_financial_data === true) {
@@ -730,6 +782,7 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
         messages: [
           { role: 'system', content: buildSystemPrompt() },
           ...(contextMessage ? [contextMessage] : []),
+          ...(intentOverrideMessage ? [intentOverrideMessage] : []),
           ...trimmedMessages,
         ],
         tools: TOOLS,
