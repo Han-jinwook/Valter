@@ -242,6 +242,47 @@ function buildAddLedgerToolCallFromStructured(structured) {
   }
 }
 
+function looksLikeNewEntryIntent(text) {
+  const t = String(text || '').toLowerCase().trim()
+  if (!t) return false
+  const deny = [
+    '삭제',
+    '지워',
+    '없애',
+    '취소',
+    '되돌',
+    '찾아',
+    '조회',
+    '검색',
+    '보여',
+    '목록',
+    '합계',
+    '분석',
+    '차트',
+    '시각화',
+    '수정',
+    '바꿔',
+    '변경',
+  ]
+  if (deny.some((k) => t.includes(k))) return false
+  const allow = [
+    '기록',
+    '입력',
+    '원장에',
+    '가계부에',
+    '써줘',
+    '썼어',
+    '결제했',
+    '사용했',
+    '샀',
+    '입금',
+    '받았',
+    '지출',
+    '수입',
+  ]
+  return allow.some((k) => t.includes(k))
+}
+
 function loadApiKey() {
   const envKey = process.env.OPENAI_API_KEY
   if (envKey) return envKey
@@ -620,7 +661,7 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
 
   try {
     // 1) 지기방 전용: 신규 거래 입력은 Structured Output으로 1차 게이트
-    if (tailMessage?.role === 'user' && latestUserText) {
+    if (tailMessage?.role === 'user' && latestUserText && looksLikeNewEntryIntent(latestUserText)) {
       const structured = await runStructuredEntryParser(apiKey, latestUserText, dbContext)
       if (structured?.is_financial_data === true) {
         if (structured.is_complete !== true) {
