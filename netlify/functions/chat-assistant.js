@@ -31,6 +31,8 @@ const ADD_LEDGER_EXPENSE_CATEGORIES = [
 ]
 const ADD_LEDGER_INCOME_CATEGORIES = ['급여', '부수입', '금융 수입', '기타 수입']
 const ADD_LEDGER_ALL_CATEGORIES = [...ADD_LEDGER_EXPENSE_CATEGORIES, ...ADD_LEDGER_INCOME_CATEGORIES]
+const EXPENSE_CATEGORY_SET = new Set(ADD_LEDGER_EXPENSE_CATEGORIES)
+const INCOME_CATEGORY_SET = new Set(ADD_LEDGER_INCOME_CATEGORIES)
 
 function addLedgerCategoryEnumBlock() {
   return `【add_ledger_entry — 카테고리 고정 Enum(반드시 이 명칭만)】
@@ -41,6 +43,203 @@ function addLedgerCategoryEnumBlock() {
 - **카드대금 결제** / **대출 상환** = 통장에서 나가 **부채를 갚는** 납부(빌린 원금/청구액). 일상 "쇼핑" 지출이 아님(앱이 예산·소비 통계에서 별도 처리).
 (참고) query_ledger·기존 원장에 나온 옛 카테고리명은 **조회·필터**에 쓰일 뿐이며, **add_ledger_entry 로 새로 쌓는 건** 항상 위 Enum만 쓴다.`
 
+}
+
+function todayIsoDate() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function buildStructuredParseSystemPrompt(today, accounts) {
+  const accountHint = accounts.length ? accounts.join(', ') : '없음'
+  return `너는 금고지기(Vault Keeper) 앱의 AI 비서다.
+유저 메시지에서 "새 거래를 기록하려는 의도"를 구조화한다.
+출력은 반드시 JSON object 하나만 반환한다. 설명/코드블록/추가 문장 금지.
+
+[판별 규칙]
+- 새 거래 기록 의도(기록/입력/써줘/지출했다/입금됐다 등)이면 is_financial_data=true
+- 조회/수정/삭제/집계/차트 요청, 일반 대화, 감탄문이면 is_financial_data=false
+
+[기록 필수 4요소]
+- category(분류), summary(적요), account(계정), amount(금액)
+- memo는 선택
+- 필수 4요소 중 누락/모호가 하나라도 있으면:
+  - is_complete=false
+  - missing_fields에 필드명 추가
+  - extracted_data 해당 필드를 null
+  - cfo_message에 누락 필드 질문 작성(추상 멘트 금지)
+
+[카테고리 Enum - 반드시 아래 중 하나]
+${ADD_LEDGER_ALL_CATEGORIES.join(', ')}
+
+[계정(account) 처리]
+- 유저가 결제수단/입금계좌를 말하지 않으면 account=null
+- "은행이체/계좌이체"처럼 모호하면 account=null 로 보고 missing_fields에 account 추가
+- 참고 가능한 기존 계정 목록: ${accountHint}
+
+[날짜(date)]
+- 형식: YYYY-MM-DD
+- 텍스트에 날짜가 없으면 오늘(${today})을 사용
+
+[응답 JSON 스키마]
+{
+  "is_financial_data": boolean,
+  "is_complete": boolean,
+  "missing_fields": ["account", "category"],
+  "extracted_data": {
+    "date": "YYYY-MM-DD",
+    "amount": 0,
+    "category": "Enum 값 또는 null",
+    "summary": "가맹점/적요 또는 null",
+    "account": "계정명 또는 null",
+    "memo": "선택 메모 또는 null"
+  },
+  "cfo_message": "is_complete=false면 누락 질문, true면 팩트라인+CFO 코멘트"
+}`
+}
+
+function parseJsonObjectStrict(text) {
+  try {
+    return JSON.parse(String(text || ''))
+  } catch {
+    return null
+  }
+}
+
+function normalizeStructuredResult(raw, today) {
+  const fallback = {
+    is_financial_data: false,
+    is_complete: false,
+    missing_fields: [],
+    extracted_data: {
+      date: today,
+      amount: 0,
+      category: null,
+      summary: null,
+      account: null,
+      memo: null,
+    },
+    cfo_message: '거래 기록을 위해 날짜·금액·적요·계정을 알려 주세요.',
+  }
+  if (!raw || typeof raw !== 'object') return fallback
+
+  const data = raw.extracted_data && typeof raw.extracted_data === 'object' ? raw.extracted_data : {}
+  const amount = Math.abs(Number(data.amount))
+  const categoryText = data.category == null ? '' : String(data.category).trim()
+  const summaryText = data.summary == null ? '' : String(data.summary).trim()
+  const accountText = data.account == null ? '' : String(data.account).trim()
+  const memoText = data.memo == null ? '' : String(data.memo).trim()
+  const dateText = data.date == null ? '' : String(data.date).trim()
+  const normalizedDate = dateText || today
+
+  const knownCategory =
+    categoryText && (EXPENSE_CATEGORY_SET.has(categoryText) || INCOME_CATEGORY_SET.has(categoryText))
+      ? categoryText
+      : null
+  const normalizedAmount = Number.isFinite(amount) ? amount : 0
+  const normalizedSummary = summaryText || null
+  const normalizedAccount = accountText || null
+
+  const missing = []
+  if (!knownCategory) missing.push('category')
+  if (!normalizedSummary) missing.push('summary')
+  if (!(normalizedAmount > 0)) missing.push('amount')
+  if (!normalizedAccount) missing.push('account')
+
+  const declaredMissing = Array.isArray(raw.missing_fields)
+    ? raw.missing_fields.map((x) => String(x || '').trim()).filter(Boolean)
+    : []
+  const mergedMissing = Array.from(new Set([...declaredMissing, ...missing]))
+  const isFinancial = raw.is_financial_data === true
+  const isComplete = isFinancial && mergedMissing.length === 0 && raw.is_complete === true
+
+  let cfoMessage = String(raw.cfo_message || '').trim()
+  if (!cfoMessage && isFinancial && !isComplete) {
+    if (mergedMissing.includes('account')) {
+      cfoMessage = `기록을 마무리하려면 결제/입금 계정이 필요해요. 어떤 수단(예: 국민카드, 현금, 신한통장)이었나요?`
+    } else if (mergedMissing.includes('summary')) {
+      cfoMessage = '어디에 쓰거나 받으셨는지(적요/가맹점) 알려 주세요.'
+    } else if (mergedMissing.includes('amount')) {
+      cfoMessage = '정확한 금액(원)을 알려 주세요.'
+    } else if (mergedMissing.includes('category')) {
+      cfoMessage = `카테고리를 알려 주세요. (${ADD_LEDGER_ALL_CATEGORIES.join(', ')})`
+    } else {
+      cfoMessage = '기록을 위해 누락 정보를 조금만 더 알려 주세요.'
+    }
+  }
+
+  return {
+    is_financial_data: isFinancial,
+    is_complete: isComplete,
+    missing_fields: mergedMissing,
+    extracted_data: {
+      date: normalizedDate,
+      amount: normalizedAmount,
+      category: knownCategory,
+      summary: normalizedSummary,
+      account: normalizedAccount,
+      memo: memoText || null,
+    },
+    cfo_message: cfoMessage,
+  }
+}
+
+async function runStructuredEntryParser(apiKey, userText, dbContext) {
+  const today = todayIsoDate()
+  const accounts = Array.isArray(dbContext?.accounts)
+    ? dbContext.accounts.map((x) => String(x || '').trim()).filter(Boolean)
+    : []
+  const body = {
+    model: 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    temperature: 0,
+    messages: [
+      { role: 'system', content: buildStructuredParseSystemPrompt(today, accounts) },
+      { role: 'user', content: String(userText || '').slice(0, 4000) },
+    ],
+  }
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return null
+  const payload = await res.json()
+  const content = payload?.choices?.[0]?.message?.content
+  const parsed = parseJsonObjectStrict(content)
+  return normalizeStructuredResult(parsed, today)
+}
+
+function inferTypeFromCategory(category) {
+  const c = String(category || '').trim()
+  if (INCOME_CATEGORY_SET.has(c)) return 'INCOME'
+  return 'EXPENSE'
+}
+
+function buildAddLedgerToolCallFromStructured(structured) {
+  const d = structured?.extracted_data || {}
+  return {
+    id: `call_add_${crypto.randomBytes(6).toString('hex')}`,
+    type: 'function',
+    function: {
+      name: 'add_ledger_entry',
+      arguments: JSON.stringify({
+        type: inferTypeFromCategory(d.category),
+        category: d.category,
+        amount: Number(d.amount),
+        date: d.date,
+        summary: d.summary,
+        detail_memo: d.memo || undefined,
+        account: d.account,
+      }),
+    },
+  }
 }
 
 function loadApiKey() {
@@ -391,6 +590,11 @@ export const handler = async (event) => {
   }
 
   const trimmedMessages = trimHistory(messages)
+  const tailMessage = trimmedMessages[trimmedMessages.length - 1]
+  const lastUserMessage = [...trimmedMessages]
+    .reverse()
+    .find((m) => m && m.role === 'user' && typeof m.content === 'string')
+  const latestUserText = String(lastUserMessage?.content || '').trim()
 
   // 유저 원장 현황을 별도 시스템 메시지로 주입 (매 요청마다 최신 상태 반영)
   const contextMessage = dbContext
@@ -415,6 +619,32 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
     : null
 
   try {
+    // 1) 지기방 전용: 신규 거래 입력은 Structured Output으로 1차 게이트
+    if (tailMessage?.role === 'user' && latestUserText) {
+      const structured = await runStructuredEntryParser(apiKey, latestUserText, dbContext)
+      if (structured?.is_financial_data === true) {
+        if (structured.is_complete !== true) {
+          return json(200, {
+            type: 'reply',
+            text:
+              String(structured.cfo_message || '').trim() ||
+              '거래 기록을 위해 누락된 정보를 알려 주세요.',
+          })
+        }
+        const call = buildAddLedgerToolCallFromStructured(structured)
+        return json(200, {
+          type: 'tool_call',
+          assistantMessage: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [call],
+          },
+          calls: [call],
+        })
+      }
+    }
+
+    // 2) 그 외 일반 대화/조회/수정/삭제/분석은 기존 tool-agent 루프
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
