@@ -1045,6 +1045,15 @@ export default function AIChatPanel() {
 
           // 매 요청마다 현재 원장 DB 현황을 함께 전송 (GPT가 계정·카테고리를 정확히 알게)
           const allDates = transactions.map((t) => normalizeDate(t.date)).filter(Boolean).sort()
+          const categoryHistoryHints = transactions
+            .filter((t) => t.status === 'CONFIRMED' && t.category && !['기타', '기타 지출', '기타 수입'].includes(t.category))
+            .slice(-30)
+            .map((t) => ({
+              summary: String(t.name || t.merchant || '').trim().slice(0, 30),
+              memo: String(t.userMemo || '').trim().slice(0, 20),
+              category: String(t.category || '').trim(),
+            }))
+            .filter((h) => h.summary && h.category)
           const dbContext = {
             accounts: registeredAccountChoices,
             categories: [...new Set(transactions.map((t) => t.category).filter(Boolean))],
@@ -1052,6 +1061,7 @@ export default function AIChatPanel() {
             dateRange: allDates.length
               ? `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
               : '데이터 없음',
+            categoryHistoryHints,
           }
 
           const res = await fetch(resolveApiUrl('/api/chat-assistant'), {

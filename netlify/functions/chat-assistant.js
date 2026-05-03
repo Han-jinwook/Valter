@@ -83,9 +83,12 @@ function todayIsoDate() {
   return `${y}-${m}-${d}`
 }
 
-function buildStructuredParseSystemPrompt(today, accounts, categories) {
+function buildStructuredParseSystemPrompt(today, accounts, categories, historyHints = []) {
   const accountHint = accounts.length ? accounts.join(', ') : '없음'
   const categoryHint = categories.length ? categories.join(', ') : '없음'
+  const historySection = historyHints.length > 0
+    ? `\n[최근 확정 거래 히스토리 — 항목 후보 1순위 참고]\n${historyHints.slice(0, 20).map((h) => `- 적요: ${h.summary}${h.memo ? `, 메모: ${h.memo}` : ''} → 항목: ${h.category}`).join('\n')}\n같은 적요·상호가 있으면 위 히스토리 항목을 category_candidates 첫 번째로 우선한다.`
+    : ''
   return `너는 금고지기(Vault Keeper) 앱의 AI 비서다.
 유저 메시지에서 "새 거래를 기록하려는 의도"를 구조화한다.
 출력은 반드시 JSON object 하나만 반환한다. 설명/코드블록/추가 문장 금지.
@@ -108,7 +111,7 @@ function buildStructuredParseSystemPrompt(today, accounts, categories) {
 
 [항목 후보 생성 원칙]
 ${ADD_LEDGER_ALL_CATEGORIES.join(', ')}
-- 단, 현재 유저 원장에 이미 존재하는 분류도 사용할 수 있다: ${categoryHint}
+- 단, 현재 유저 원장에 이미 존재하는 분류도 사용할 수 있다: ${categoryHint}${historySection}
 - 같은 상호·적요·메모의 기존 거래가 있으면 그 항목을 최우선 후보로 재사용한다.
 - 기존 히스토리 매칭이 없으면 거래의 용도·상황·상식적 의미를 해석해서 범용 후보 풀에서 가장 가까운 항목 2개를 고른다.
 - 확신이 없으면 "기타 지출/기타 수입"으로 때우지 말고 category=null, missing_fields에 "category"를 넣어라. 앱이 항목 후보 칩 2개와 직접 입력창을 보여준다.
@@ -270,12 +273,15 @@ async function runStructuredEntryParser(apiKey, userText, dbContext, recentMessa
   const categories = Array.isArray(dbContext?.categories)
     ? dbContext.categories.map((x) => String(x || '').trim()).filter(Boolean)
     : []
+  const historyHints = Array.isArray(dbContext?.categoryHistoryHints)
+    ? dbContext.categoryHistoryHints.slice(0, 20)
+    : []
   const body = {
     model: 'gpt-4o-mini',
     response_format: { type: 'json_object' },
     temperature: 0,
     messages: [
-      { role: 'system', content: buildStructuredParseSystemPrompt(today, accounts, categories) },
+      { role: 'system', content: buildStructuredParseSystemPrompt(today, accounts, categories, historyHints) },
       { role: 'user', content: buildStructuredEntryUserContent(recentMessages, userText) },
     ],
   }
@@ -292,6 +298,94 @@ async function runStructuredEntryParser(apiKey, userText, dbContext, recentMessa
   const content = payload?.choices?.[0]?.message?.content
   const parsed = parseJsonObjectStrict(content)
   return normalizeStructuredResult(parsed, today, categories)
+}
+
+/**
+ * category_candidates가 2개 미만일 때 보정한다.
+ * 1순위: JS 히스토리 매칭 (API 호출 없음)
+ * 2순위: LLM 단발 후보 호출 (범용 후보 풀 기반, 키워드 룰 없음)
+ * 3순위: 범용 후보 풀 앞에서 순서대로 채움
+ */
+async function ensureCategoryCandidates(apiKey, structured, historyHints = []) {
+  let candidates = Array.isArray(structured.category_candidates) ? [...structured.category_candidates] : []
+  if (candidates.length >= 2) return candidates.slice(0, 2)
+
+  const summary = String(structured.extracted_data?.summary || '').trim()
+  const memo = String(structured.extracted_data?.memo || '').trim()
+
+  // 1. JS 히스토리 매칭 — 추가 API 호출 없음
+  if (historyHints.length > 0) {
+    const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '')
+    const sSlug = slug(summary)
+    const mSlug = slug(memo)
+    const scores = new Map()
+    for (const h of historyHints) {
+      const cat = String(h.category || '').trim()
+      if (!cat || GENERIC_CATEGORY_SET.has(cat)) continue
+      const hSlug = slug(h.summary || '')
+      const hmSlug = slug(h.memo || '')
+      let score = 0
+      if (sSlug && hSlug && (sSlug.includes(hSlug) || hSlug.includes(sSlug))) score += 3
+      if (mSlug && hmSlug && (mSlug.includes(hmSlug) || hmSlug.includes(mSlug))) score += 1
+      if (score > 0) scores.set(cat, (scores.get(cat) || 0) + score)
+    }
+    const fromHistory = [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([cat]) => cat)
+    for (const c of fromHistory) {
+      if (!candidates.includes(c)) {
+        candidates.push(c)
+        if (candidates.length >= 2) break
+      }
+    }
+  }
+
+  if (candidates.length >= 2) return candidates.slice(0, 2)
+
+  // 2. LLM 단발 후보 호출 — 범용 후보 풀에서만 고르게 함 (키워드 룰 없음)
+  if (summary) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: `항목 후보 선택 전용. 거래를 보고 아래 후보 풀에서 가장 적합한 항목 2개를 골라 {"candidates":["항목1","항목2"]} 형태로만 반환. JSON 외 텍스트 없음.\n후보 풀: ${COMMON_CATEGORY_CANDIDATES.join(', ')}`,
+            },
+            { role: 'user', content: `거래: ${summary}${memo ? ` / ${memo}` : ''}` },
+          ],
+        }),
+      })
+      if (res.ok) {
+        const payload = await res.json()
+        const content = payload?.choices?.[0]?.message?.content
+        const parsed = parseJsonObjectStrict(content)
+        const arr = Array.isArray(parsed?.candidates) ? parsed.candidates : []
+        for (const x of arr) {
+          const clean = String(x || '').trim()
+          if (clean && !GENERIC_CATEGORY_SET.has(clean) && !candidates.includes(clean)) {
+            candidates.push(clean)
+            if (candidates.length >= 2) break
+          }
+        }
+      }
+    } catch {
+      // LLM 보정 실패 시 3단계로 진행
+    }
+  }
+
+  // 3. 범용 후보 풀 앞에서 순서대로 채움 — 키워드 룰 없음
+  for (const c of COMMON_CATEGORY_CANDIDATES) {
+    if (!candidates.includes(c)) {
+      candidates.push(c)
+      if (candidates.length >= 2) break
+    }
+  }
+
+  return candidates.slice(0, 2)
 }
 
 function inferTypeFromCategory(category) {
@@ -994,6 +1088,8 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
             Number(d.amount) > 0 &&
             d.date
           if (onlyCategoryMissing) {
+            const historyHintsForEnsure = Array.isArray(dbContext?.categoryHistoryHints) ? dbContext.categoryHistoryHints : []
+            const guaranteedCandidates = await ensureCategoryCandidates(apiKey, structured, historyHintsForEnsure)
             return json(200, {
               type: 'category_confirm',
               entry: {
@@ -1003,9 +1099,7 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
                 summary: d.summary,
                 detail_memo: d.memo || '',
                 account: d.account || '',
-                suggestedCategories: Array.isArray(structured.category_candidates)
-                  ? structured.category_candidates.slice(0, 2)
-                  : [],
+                suggestedCategories: guaranteedCandidates,
               },
             })
           }
