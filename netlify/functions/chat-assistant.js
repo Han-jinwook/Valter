@@ -102,46 +102,12 @@ const COMMON_CATEGORY_CANDIDATES = CHAT_DISPLAY_EXPENSE_POOL
 const CHAT_DISPLAY_EXPENSE_SET = new Set(CHAT_DISPLAY_EXPENSE_POOL)
 const CHAT_DISPLAY_INCOME_SET = new Set(CHAT_DISPLAY_INCOME_POOL)
 
-/** 기계 순서 폴백(LLM 미사용 분기 등)에는 식사·마트 패턴부터 쓰지 않고 뒤로 미룬다. */
-const CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD = new Set([
-  '식재료/마트',
-  '외식',
-  '카페/간식',
-  '편의점',
-  '배달',
-  '술/담배',
-])
-
-/** LLM 장애 시에도 회비·취미·건강류가 식료·공과금 앞으로 오도록(거래별 키워드 없이 목록 순서만 조정). */
-const CHAT_DISPLAY_EXPENSE_MECHANICAL_HEAD = [
-  '교육',
-  '운동/헬스',
-  '문화/여가',
-  '구독',
-  '영화/공연',
-  '도서/학습',
-  '패션/잡화',
-  '미용/뷰티',
-  '온라인쇼핑',
-  '생활용품',
-  '교통',
-  '반려동물',
-  '경조사',
-]
-
-function expensePoolForMechanicalFallback() {
-  const ordered = []
-  const seen = new Set()
-  for (const label of [...CHAT_DISPLAY_EXPENSE_MECHANICAL_HEAD, ...CHAT_DISPLAY_EXPENSE_POOL]) {
-    if (!CHAT_DISPLAY_EXPENSE_SET.has(label) || seen.has(label)) continue
-    if (CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD.has(label)) continue
-    ordered.push(label)
-    seen.add(label)
-  }
-  /** 식료·외식 패턴은 맨 마지막 순서 채움용 */
-  const foodTail = CHAT_DISPLAY_EXPENSE_POOL.filter((x) => CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD.has(x))
-  return [...ordered, ...foodTail]
-}
+/**
+ * LLM/네트워크 실패 또는 의미 추론 후에도 슬롯이 남을 때만 채우는 풀 내 고정 쌍.
+ * 배열 '앞 2개 자르기' 폴백을 쓰지 않기 위함(교육·운동/헬스 등 오추천 방지).
+ */
+const SAFE_CATEGORY_PAIR_EXPENSE = ['생활용품', '온라인쇼핑']
+const SAFE_CATEGORY_PAIR_INCOME = ['급여', '환급/캐시백']
 
 function inferChatPoolIsIncomeHint(userText, summary, memo) {
   const blob = `${String(userText || '')} ${String(summary || '')} ${String(memo || '')}`.trim()
@@ -458,17 +424,22 @@ async function runStructuredEntryParser(apiKey, userText, dbContext, recentMessa
 
 /**
  * category_candidates가 2개 미만일 때 보정한다.
- * 1순위: JS 히스토리 매칭 (API 호출 없음)
- * 2순위: LLM 단발 후보 호출 (범용 후보 풀 기반, 키워드 룰 없음)
- * 3순위: 범용 후보 풀 앞에서 순서대로 채움
+ * Step 1: 히스토리 힌트 매칭(API 없음)
+ * Step 2: 의미 기반 LLM 폴백(gpt-4o-mini, temperature 0.1, json_object) — 배열 앞줄 기계 폴백 없음
+ * Step 3: 슬롯이 남으면 풀 내 고정 안전 쌍으로만 채움(통신 실패·파싱 실패·LLM이 2개를 못 줄 때 공통)
  */
 async function ensureCategoryCandidates(apiKey, structured, historyHints = [], latestUserText = '') {
   const summary = String(structured.extracted_data?.summary || '').trim()
   const memo = String(structured.extracted_data?.memo || '').trim()
+  const amountRaw = structured.extracted_data?.amount
+  const amountNum = Number(amountRaw)
+  const amountLine =
+    Number.isFinite(amountNum) && amountNum !== 0 ? `금액: ${Math.abs(Math.round(amountNum * 100) / 100)}원` : ''
+
   const incomeTurn = inferChatPoolIsIncomeHint(latestUserText, summary, memo)
   const activePoolForLlm = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : CHAT_DISPLAY_EXPENSE_POOL
-  const poolForMechanical = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : expensePoolForMechanicalFallback()
   const poolSet = incomeTurn ? CHAT_DISPLAY_INCOME_SET : CHAT_DISPLAY_EXPENSE_SET
+  const safePair = incomeTurn ? SAFE_CATEGORY_PAIR_INCOME : SAFE_CATEGORY_PAIR_EXPENSE
 
   let candidates = Array.isArray(structured.category_candidates) ? [...structured.category_candidates] : []
   candidates = candidates.map((x) => normalizeChipLabelToChatPool(String(x || '').trim())).filter((c) => c && poolSet.has(c))
@@ -482,7 +453,9 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
   }
   if (candidates.length >= 2) return candidates.slice(0, 2)
 
-  // 1. JS 히스토리 매칭 — 표준안으로 치환 후 동일 로직
+  const blobLower = `${summary} ${memo} ${latestUserText}`.trim().toLowerCase()
+
+  // Step 1: 히스토리 매칭 — 적요/메모/원문과 겹치는 힌트 우선
   if (historyHints.length > 0) {
     const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '')
     const sSlug = slug(summary)
@@ -492,11 +465,15 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
       const rawCat = String(h.category || '').trim()
       const cat = normalizeChipLabelToChatPool(rawCat)
       if (!cat || GENERIC_CATEGORY_SET.has(cat) || !poolSet.has(cat)) continue
-      const hSlug = slug(h.summary || '')
-      const hmSlug = slug(h.memo || '')
+      const hSum = String(h.summary || '').trim()
+      const hMemo = String(h.memo || '').trim()
+      const hSlug = slug(hSum)
+      const hmSlug = slug(hMemo)
       let score = 0
-      if (sSlug && hSlug && (sSlug.includes(hSlug) || hSlug.includes(sSlug))) score += 3
-      if (mSlug && hmSlug && (mSlug.includes(hmSlug) || hmSlug.includes(mSlug))) score += 1
+      if (sSlug && hSlug && (sSlug.includes(hSlug) || hSlug.includes(sSlug))) score += 4
+      if (mSlug && hmSlug && (mSlug.includes(hmSlug) || hmSlug.includes(mSlug))) score += 2
+      if (blobLower && hSum.length > 0 && blobLower.includes(hSum.toLowerCase())) score += 3
+      if (blobLower && hMemo.length > 1 && blobLower.includes(hMemo.toLowerCase())) score += 1
       if (score > 0) scores.set(cat, (scores.get(cat) || 0) + score)
     }
     const fromHistory = [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([cat]) => cat)
@@ -510,51 +487,75 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
 
   if (candidates.length >= 2) return candidates.slice(0, 2)
 
-  // 2. LLM 단발 후보 호출 — 범용 후보 풀에서만 고르게 함 (키워드 룰 없음)
-  if (summary || latestUserText.trim()) {
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: `항목 후보 선택 전용. 거래 텍스트를 보고 (${incomeTurn ? '수입' : '지출'} 풀만) 다음 목록 중에서 가장 적합한 2개를 정확한 철자로 골라 {"candidates":["항목1","항목2"]} 만 반환. 목록 외 문자열 금지. 식료·외식은 먹고 마실 때만 적절하지, 월회비·학원·클럽·회비류는 교육·구독·문화/여가·운동/헬스 등을 검토한다.\n허용 목록:\n${activePoolForLlm.join(', ')}`,
-            },
-            {
-              role: 'user',
-              content: [
-                latestUserText ? `사용자 원문(일부): ${String(latestUserText).slice(0, 600)}` : '',
-                '',
-                summary ? `파싱된 적요(summary): ${summary}` : '',
-                memo ? `파싱된 메모(memo): ${memo}` : '',
-              ]
-                .filter(Boolean)
-                .join('\n'),
-            },
-          ],
-        }),
-      })
-      if (res.ok) {
+  const userSlice = String(latestUserText || '').slice(0, 600)
+  const hasSemanticContext = Boolean(summary || memo || userSlice.trim())
+
+  const extractLlmCandidateArray = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return []
+    if (Array.isArray(parsed.candidates)) return parsed.candidates
+    if (Array.isArray(parsed.category_candidates)) return parsed.category_candidates
+    return []
+  }
+
+  // Step 2: 의미 기반 LLM — 기계 순서 폴백 대신 풀 안에서만 2개 추론
+  if (hasSemanticContext) {
+    const poolList = activePoolForLlm.join(', ')
+    for (let attempt = 0; attempt < 2 && candidates.length < 2; attempt++) {
+      const baseUser = [
+        amountLine,
+        summary ? `적요(summary): ${summary}` : '',
+        memo ? `메모(memo): ${memo}` : '',
+        userSlice ? `사용자 원문(발췌): ${userSlice}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      const retryHint =
+        attempt === 0
+          ? ''
+          : `\n\n[재시도] 이전 JSON이 규칙을 어겼거나 후보가 부족했다. 허용 목록의 문자열만 정확히 쓰고, 서로 다른 레이블 2개를 {"candidates":["...","..."]} 한 번에 반환하라. 이미 쓸 만한 후보: ${candidates.join(', ') || '없음'}`
+
+      const systemContent = `항목 후보 전용 보조 호출이다. 아래 거래 설명을 읽고 **의미적으로** 가장 가까운 항목 2개만 고른다.
+
+규칙:
+- ${incomeTurn ? '수입' : '지출'} 거래로 보고, 오직 아래 "허용 목록"에 있는 문자열만 사용(철자·슬래시 동일).
+- 출력은 JSON 하나: {"candidates":["레이블1","레이블2"]}. 반드시 서로 다른 2개. 목록 밖 이름·"기타"·빈 배열 금지.
+- 철물점·잡화·공구·생필 소매는 **교육·운동/헬스보다** 생활/쇼핑 계열(예: 생활용품, 온라인쇼핑, 편의점)을 우선 검토한다. 교육·운동은 해당 맥락(학원·회비·운동 등)이 분명할 때만 선택한다.
+
+허용 목록(${activePoolForLlm.length}개): ${poolList}${retryHint}`
+
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: systemContent },
+              { role: 'user', content: baseUser },
+            ],
+          }),
+        })
+        if (!res.ok) break
         const payload = await res.json()
         const content = payload?.choices?.[0]?.message?.content
         const parsed = parseJsonObjectStrict(content)
-        const arr = Array.isArray(parsed?.candidates) ? parsed.candidates : []
+        const arr = extractLlmCandidateArray(parsed)
         for (const x of arr) {
-          addOption(normalizeChipLabelToChatPool(String(x || '').trim()) || '')
+          const lab = normalizeChipLabelToChatPool(String(x || '').trim())
+          if (lab) addOption(lab)
+          if (candidates.length >= 2) break
         }
+      } catch {
+        break
       }
-    } catch {
-      // LLM 보정 실패 시 3단계로 진행
     }
   }
 
-  // 3. 순서 폴백 — 식사·마트 패턴은 목록 후순위(기계 채움만, 사용자 혼선 방지)
-  for (const c of poolForMechanical) {
+  // Step 3: 남은 슬롯만 풀 내 안전 쌍으로 채움(무작위 배열 앞줄 사용 안 함)
+  for (const c of safePair) {
     addOption(c)
     if (candidates.length >= 2) break
   }
