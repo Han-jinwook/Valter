@@ -272,7 +272,7 @@ function buildCategoryOptionsForPendingEntry(entry, transactions = []) {
   const memo = String(entry?.detail_memo || '').trim()
   for (const tx of Array.isArray(transactions) ? transactions : []) {
     if (tx?.status !== 'CONFIRMED') continue
-    const category = String(tx?.category || '').trim()
+    const category = String((tx?.categoryDisplay ?? tx?.category) || '').trim()
     if (!category || category === '기타' || category === '기타 지출') continue
     const txMerchant = String(tx?.name || tx?.merchant || '').trim()
     const txMemo = String(tx?.userMemo || '').trim()
@@ -477,7 +477,9 @@ function runQueryLedger(transactions, args, knownAccountsList = []) {
       dateRange: allDates.length
         ? `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
         : '데이터 없음',
-      categories: [...new Set(transactions.map((t) => t.category).filter(Boolean))],
+      categories: [...new Set(transactions.flatMap((t) => [t.categoryDisplay, t.category].filter(Boolean)))].filter(
+        Boolean,
+      ),
     },
   }
 }
@@ -1076,12 +1078,14 @@ export default function AIChatPanel() {
             .map((t) => ({
               summary: String(t.name || t.merchant || '').trim().slice(0, 30),
               memo: String(t.userMemo || '').trim().slice(0, 20),
-              category: String(t.category || '').trim(),
+              category: String((t.categoryDisplay ?? t.category) || '').trim(),
             }))
             .filter((h) => h.summary && h.category)
           const dbContext = {
             accounts: registeredAccountChoices,
-            categories: [...new Set(transactions.map((t) => t.category).filter(Boolean))],
+            categories: [
+              ...new Set(transactions.flatMap((t) => [t.categoryDisplay, t.category].filter(Boolean))),
+            ].filter(Boolean),
             totalTransactions: transactions.length,
             dateRange: allDates.length
               ? `${allDates[0]} ~ ${allDates[allDates.length - 1]}`

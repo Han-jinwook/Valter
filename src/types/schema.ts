@@ -22,8 +22,10 @@ export interface Transaction {
   merchant: string
   /** 출금/입금 계정명 (예: 현금, 통장1, 통장2) */
   account?: string
-  /** 카테고리명 (예: 식비, 교통, 수입) */
+  /** 카테고리명 (예: 식비, 교통, 수입) — 집계·도구용 Keeper Enum 등 */
   category: string
+  /** 채팅 38+7 등 사용자가 고른 표시 라벨( 있으면 원장·히스토리 UI는 이것을 우선 표시) */
+  categoryDisplay?: string
   /** 수입/지출/이체 구분 */
   type: TransactionType
   /**

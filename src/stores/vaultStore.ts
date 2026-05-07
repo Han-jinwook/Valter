@@ -234,7 +234,9 @@ type VaultState = {
   completeTransactionReview: (txId: string, category: string, account: string) => Promise<void>
   updateTransactionInline: (
     txId: string,
-    patch: Partial<Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'amount' | 'account'>>
+    patch: Partial<
+      Pick<VaultTransaction, 'name' | 'location' | 'userMemo' | 'category' | 'categoryDisplay' | 'amount' | 'account'>
+    >
   ) => Promise<void>
   /** IndexedDB `ledger_lines` 1행 추가 + Zustand (원장/요약 갱신) */
   addLine: (tx: VaultTransaction) => Promise<void>
@@ -395,6 +397,25 @@ function normalizeKeeperAddLedgerCategory(
   }
   /** 직접 입력 등 Enum 밖 문자열 — 보수적으로 폴백 */
   return type === 'INCOME' ? '기타 수입' : '기타 지출'
+}
+
+/**
+ * 채팅 38+7 등 사용자 라벨 → 원장 저장용 Keeper category + UI 표시용 categoryDisplay.
+ * 표시 라벨이 Enum과 다를 때만 `categoryDisplay`를 둔다.
+ */
+export function resolveStoredCategoryFromUserInput(
+  type: 'EXPENSE' | 'INCOME',
+  rawInput: string,
+): { category: string; categoryDisplay?: string } {
+  const raw = String(rawInput || '').trim()
+  if (!raw) {
+    return { category: type === 'INCOME' ? '기타 수입' : '기타 지출' }
+  }
+  const category = normalizeKeeperAddLedgerCategory(type, raw)
+  if (raw !== category) {
+    return { category, categoryDisplay: raw }
+  }
+  return { category }
 }
 
 function normalizeApiDate(dateText?: string | null) {
@@ -722,7 +743,7 @@ function buildVaultTxFromAiLedgerEntry(input: {
   const signed = txType === 'INCOME' ? amountAbs : -amountAbs
   const summ = String(input.summary || '').trim() || '내용'
   const extra = String(input.detail_memo || '').trim()
-  const categoryNorm = normalizeKeeperAddLedgerCategory(
+  const { category: categoryNorm, categoryDisplay } = resolveStoredCategoryFromUserInput(
     input.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
     String(input.category || '').trim(),
   )
@@ -740,6 +761,7 @@ function buildVaultTxFromAiLedgerEntry(input: {
     location: '',
     userMemo: extra,
     category: categoryNorm,
+    ...(categoryDisplay ? { categoryDisplay } : {}),
     type: txType,
     aiConfidence: 1,
     status: 'CONFIRMED',
@@ -1204,7 +1226,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   updateTransactionInline: async (txId, patch) => {
     const t = get().transactions.find((x) => x.id === txId)
     if (!t) return
-    const next: VaultTransaction = { ...t, ...patch }
+    let next: VaultTransaction = { ...t, ...patch }
+    if (Object.prototype.hasOwnProperty.call(patch, 'categoryDisplay') && patch.categoryDisplay === undefined) {
+      const { categoryDisplay: _omit, ...rest } = next
+      next = rest as VaultTransaction
+    }
     if (patch.name !== undefined) {
       next.merchant = patch.name
     }

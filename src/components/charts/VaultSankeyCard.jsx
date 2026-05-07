@@ -87,7 +87,7 @@ export default function VaultSankeyCard({ transactions = [], chartHeight = 220 }
         income += amt
       } else {
         expense += Math.abs(amt)
-        const cat = tx.category || '미분류'
+        const cat = tx.categoryDisplay || tx.category || '미분류'
         catMap[cat] = (catMap[cat] || 0) + Math.abs(amt)
       }
     }

@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { LEDGER_CATEGORY_FILTER_UNASSIGNED, useVaultStore } from '../../stores/vaultStore'
+import { LEDGER_CATEGORY_FILTER_UNASSIGNED, useVaultStore, resolveStoredCategoryFromUserInput } from '../../stores/vaultStore'
 import { useUIStore } from '../../stores/uiStore'
 import { normalizeLedgerAccountLabel } from '../../lib/ledgerAccountNormalize'
 
@@ -60,6 +60,10 @@ function selectValueToLedgerPreset(value) {
     }
   }
   return { kind: 'all' }
+}
+
+function ledgerVisibleCategory(tx) {
+  return String(tx?.categoryDisplay ?? tx?.category ?? '').trim()
 }
 
 function buildSourceLabel(tx) {
@@ -155,14 +159,14 @@ export default function TransactionTable() {
   const ledgerCategoryChoices = useMemo(() => {
     const s = new Set()
     for (const tx of transactions) {
-      const t = String(tx.category ?? '').trim()
+      const t = ledgerVisibleCategory(tx)
       if (t) s.add(t)
     }
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
   }, [transactions])
 
   const hasUncategorizedLedgerRows = useMemo(
-    () => transactions.some((tx) => !String(tx.category ?? '').trim()),
+    () => transactions.some((tx) => !ledgerVisibleCategory(tx)),
     [transactions],
   )
 
@@ -217,10 +221,13 @@ export default function TransactionTable() {
         r = r.filter((tx) => normalizeLedgerAccountLabel(tx.account) === afNorm)
       }
       if (ledgerCategoryFilter === LEDGER_CATEGORY_FILTER_UNASSIGNED) {
-        r = r.filter((tx) => !String(tx.category ?? '').trim())
+        r = r.filter((tx) => !ledgerVisibleCategory(tx))
       } else if (ledgerCategoryFilter?.trim()) {
         const cf = ledgerCategoryFilter.trim()
-        r = r.filter((tx) => String(tx.category ?? '').trim() === cf)
+        r = r.filter(
+          (tx) =>
+            String(tx.category ?? '').trim() === cf || String(tx.categoryDisplay ?? '').trim() === cf,
+        )
       }
       return r
     }
@@ -346,7 +353,19 @@ export default function TransactionTable() {
         void updateTransactionInline(txId, { amount: signed })
       }
     } else {
-      void updateTransactionInline(txId, { [field]: nextRaw })
+      if (field === 'category') {
+        const tx = transactions.find((item) => item.id === txId)
+        if (tx) {
+          const typ = tx.amount > 0 ? 'INCOME' : 'EXPENSE'
+          const resolved = resolveStoredCategoryFromUserInput(typ, nextRaw)
+          void updateTransactionInline(txId, {
+            category: resolved.category,
+            categoryDisplay: resolved.categoryDisplay,
+          })
+        }
+      } else {
+        void updateTransactionInline(txId, { [field]: nextRaw })
+      }
     }
     setEditingCell(null)
   }
@@ -647,12 +666,12 @@ export default function TransactionTable() {
                             onCommit={commitEdit}
                             onCancel={cancelEdit}
                           />
-                        ) : tx.category ? (
+                        ) : ledgerVisibleCategory(tx) ? (
                           <span
-                            onDoubleClick={() => beginEdit(tx.id, 'category', tx.category)}
+                            onDoubleClick={() => beginEdit(tx.id, 'category', ledgerVisibleCategory(tx))}
                             className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-extrabold cursor-text"
                           >
-                            {tx.category}
+                            {ledgerVisibleCategory(tx)}
                           </span>
                         ) : (
                           <span
