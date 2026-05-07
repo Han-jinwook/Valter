@@ -102,6 +102,47 @@ const COMMON_CATEGORY_CANDIDATES = CHAT_DISPLAY_EXPENSE_POOL
 const CHAT_DISPLAY_EXPENSE_SET = new Set(CHAT_DISPLAY_EXPENSE_POOL)
 const CHAT_DISPLAY_INCOME_SET = new Set(CHAT_DISPLAY_INCOME_POOL)
 
+/** 기계 순서 폴백(LLM 미사용 분기 등)에는 식사·마트 패턴부터 쓰지 않고 뒤로 미룬다. */
+const CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD = new Set([
+  '식재료/마트',
+  '외식',
+  '카페/간식',
+  '편의점',
+  '배달',
+  '술/담배',
+])
+
+/** LLM 장애 시에도 회비·취미·건강류가 식료·공과금 앞으로 오도록(거래별 키워드 없이 목록 순서만 조정). */
+const CHAT_DISPLAY_EXPENSE_MECHANICAL_HEAD = [
+  '교육',
+  '운동/헬스',
+  '문화/여가',
+  '구독',
+  '영화/공연',
+  '도서/학습',
+  '패션/잡화',
+  '미용/뷰티',
+  '온라인쇼핑',
+  '생활용품',
+  '교통',
+  '반려동물',
+  '경조사',
+]
+
+function expensePoolForMechanicalFallback() {
+  const ordered = []
+  const seen = new Set()
+  for (const label of [...CHAT_DISPLAY_EXPENSE_MECHANICAL_HEAD, ...CHAT_DISPLAY_EXPENSE_POOL]) {
+    if (!CHAT_DISPLAY_EXPENSE_SET.has(label) || seen.has(label)) continue
+    if (CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD.has(label)) continue
+    ordered.push(label)
+    seen.add(label)
+  }
+  /** 식료·외식 패턴은 맨 마지막 순서 채움용 */
+  const foodTail = CHAT_DISPLAY_EXPENSE_POOL.filter((x) => CHAT_DISPLAY_EXPENSE_ROUTINE_FOOD.has(x))
+  return [...ordered, ...foodTail]
+}
+
 function inferChatPoolIsIncomeHint(userText, summary, memo) {
   const blob = `${String(userText || '')} ${String(summary || '')} ${String(memo || '')}`.trim()
   if (!blob) return false
@@ -212,6 +253,7 @@ ${ADD_LEDGER_ALL_CATEGORIES.join(', ')}
 - 단, 현재 유저 원장에 이미 존재하는 분류도 사용할 수 있다: ${categoryHint}${historySection}
 - 같은 상호·적요·메모의 기존 거래가 있으면 그 항목을 최우선 후보로 재사용한다.
 - 기존 히스토리 매칭이 없으면 거래의 용도·상황·상식적 의미를 해석해서 범용 후보 풀에서 가장 가까운 항목 2개를 고른다.
+- **식료·외식류(마트·배달·편의점 등) 후보는 "먹고 마시거나 장을 본" 거래일 때만** 우선 선택한다. **월회비·학원·클럽·회비·이체 납부** 등은 교육·구독·문화/여가·운동/헬스·생활용품 등 해당 맥락을 우선 검토하고, 무작정 식재료/마트·외식부터 고르지 말 것.
 - 확신이 없으면 "기타 지출/기타 수입"으로 때우지 말고 category=null, missing_fields에 "category"를 넣어라. 앱이 항목 후보 칩 2개와 직접 입력창을 보여준다.
 - category=null인 경우 category_candidates는 절대 빈 배열이면 안 된다. 반드시 중복 없는 후보 2개를 채워라.
 - category_candidates는 "기타", "기타 지출", "기타 수입"을 포함하지 않는다.
@@ -424,7 +466,8 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
   const summary = String(structured.extracted_data?.summary || '').trim()
   const memo = String(structured.extracted_data?.memo || '').trim()
   const incomeTurn = inferChatPoolIsIncomeHint(latestUserText, summary, memo)
-  const activePool = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : CHAT_DISPLAY_EXPENSE_POOL
+  const activePoolForLlm = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : CHAT_DISPLAY_EXPENSE_POOL
+  const poolForMechanical = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : expensePoolForMechanicalFallback()
   const poolSet = incomeTurn ? CHAT_DISPLAY_INCOME_SET : CHAT_DISPLAY_EXPENSE_SET
 
   let candidates = Array.isArray(structured.category_candidates) ? [...structured.category_candidates] : []
@@ -468,7 +511,7 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
   if (candidates.length >= 2) return candidates.slice(0, 2)
 
   // 2. LLM 단발 후보 호출 — 범용 후보 풀에서만 고르게 함 (키워드 룰 없음)
-  if (summary) {
+  if (summary || latestUserText.trim()) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -480,9 +523,19 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
           messages: [
             {
               role: 'system',
-              content: `항목 후보 선택 전용. 거래 텍스트를 보고 (${incomeTurn ? '수입' : '지출'} 풀만) 다음 목록 중에서 가장 적합한 2개를 정확한 철자로 골라 {"candidates":["항목1","항목2"]} 만 반환. 목록 외 문자열 금지.\n허용 목록:\n${activePool.join(', ')}`,
+              content: `항목 후보 선택 전용. 거래 텍스트를 보고 (${incomeTurn ? '수입' : '지출'} 풀만) 다음 목록 중에서 가장 적합한 2개를 정확한 철자로 골라 {"candidates":["항목1","항목2"]} 만 반환. 목록 외 문자열 금지. 식료·외식은 먹고 마실 때만 적절하지, 월회비·학원·클럽·회비류는 교육·구독·문화/여가·운동/헬스 등을 검토한다.\n허용 목록:\n${activePoolForLlm.join(', ')}`,
             },
-            { role: 'user', content: `거래: ${summary}${memo ? ` / ${memo}` : ''}` },
+            {
+              role: 'user',
+              content: [
+                latestUserText ? `사용자 원문(일부): ${String(latestUserText).slice(0, 600)}` : '',
+                '',
+                summary ? `파싱된 적요(summary): ${summary}` : '',
+                memo ? `파싱된 메모(memo): ${memo}` : '',
+              ]
+                .filter(Boolean)
+                .join('\n'),
+            },
           ],
         }),
       })
@@ -500,8 +553,8 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = [], l
     }
   }
 
-  // 3. 순서 폴백 — Tier A 순서 근처를 반영해 리스트 앞쪽 우선 채움
-  for (const c of activePool) {
+  // 3. 순서 폴백 — 식사·마트 패턴은 목록 후순위(기계 채움만, 사용자 혼선 방지)
+  for (const c of poolForMechanical) {
     addOption(c)
     if (candidates.length >= 2) break
   }
