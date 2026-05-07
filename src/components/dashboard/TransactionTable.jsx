@@ -586,7 +586,7 @@ export default function TransactionTable() {
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
-                      <div className="w-[74px] shrink-0 text-[11px] text-gray-500 tabular-nums">
+                      <div className="w-[74px] shrink-0 text-[11px] font-semibold text-gray-800 tabular-nums">
                         {idx === 0 ? fmtDateCompact(group.date) : '\u00A0'}
                       </div>
                       <label
