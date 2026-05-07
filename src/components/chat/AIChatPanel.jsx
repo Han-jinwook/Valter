@@ -286,8 +286,9 @@ function buildCategoryOptionsForPendingEntry(entry, transactions = []) {
     seen.add(clean)
   }
 
-  picked.forEach((opt) => addOption(opt.category))
+  /** 서버 추천을 먼저 넣어 순서를 고정한다(히스토리 우선 시 저장 직후 같은 가맹점 매칭으로 칩 순서가 뒤집히는 현상 방지). */
   suggested.forEach(addOption)
+  picked.forEach((opt) => addOption(opt.category))
 
   return options.slice(0, 2)
 }
@@ -1007,7 +1008,8 @@ export default function AIChatPanel() {
         return
       }
       clearAiFilter()
-      const factLine = formatNeedAccountFactLine(out.summary)
+      /** 원장 Enum(예: 쇼핑/뷰티)이 아니라 사용자가 칩·입력으로 고른 표시 문구를 한 줄 요약에 쓴다. */
+      const factLine = formatNeedAccountFactLine({ ...out.summary, category: pickedCategory })
       if (!pickedAccount && !String(entry.account || '').trim()) {
         addChatMessage({
           role: 'ai',
@@ -1799,16 +1801,8 @@ function ChatBubble({
           </>
         ) : (
           <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
-            {tx?.category ? (
-              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-                {tx.category}
-              </span>
-            ) : null}
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-              {tx?.account || '계정 확인'}
-            </span>
             <span className="material-symbols-outlined text-sm">check_circle</span>
-            항목/계정 반영 완료
+            반영 완료
           </div>
         )}
       </div>
