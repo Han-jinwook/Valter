@@ -41,6 +41,10 @@
   - `is_financial_data=false`면 일반 대화/조회 흐름으로 보낸다.
   - `is_financial_data=true`인데 필수4 누락이면 `is_complete=false` + `missing_fields`로 되묻는다.
   - 필수4가 갖춰졌을 때만 `is_complete=true`로 등록 단계(`add_ledger_entry`)로 진입한다.
+- **채팅 “항목” 칩(표시 라벨) vs 원장 저장 Enum**
+  - 서버(`chat-assistant.js`)는 **항목 후보 문자열 전용 표시 풀**을 둔다: 지출 **`CHAT_DISPLAY_EXPENSE_POOL`(38종)**, 수입 **`CHAT_DISPLAY_INCOME_POOL`(7종)**. 출처는 외부 리서치(국가통계·앱·카드 업종 교차안)와 정렬한 **정본**이며, Structured 프롬프트·단발 후보 호출에서는 **풀 안 문자열만** 사용한다(목록 문자열 새로 만들지 않음).
+  - `category=null` 분기에서는 `ensureCategoryCandidates` 로 후보 보강한다: IndexedDB 요약 **`dbContext.categoryHistoryHints`**, 부족 시 LLM 단발, 폴백은 해당 풀 순서 채움. 과거 Enum·구형 칩명은 동치만 처리(`normalizeChipLabelToChatPool` 등)—거래별 키워드 하드코딩 없음.
+  - 사용자가 선택·직접 입력한 라벨이 위 풀 밖일 수 있는 경우, 원장 적재 단계에서는 **`vaultStore`의 `CHAT_DISPLAY_TO_KEEPER_*` 매핑**으로 **Keeper `add_ledger_entry` Enum**으로 접고, 매핑 불가만 **기타 지출 / 기타 수입**.
 
 ### 1-3. add_ledger_entry 규칙
 
@@ -51,8 +55,8 @@
   - 수입: 급여, 부수입, 금융 수입, 기타 수입
 - `summary`는 가맹/장소 우선, `detail_memo`는 메뉴/품목/끼니 태그(`품목, 점심`) 우선.
 - Structured 게이트 응답 스키마 기준:
-  - `is_financial_data`, `is_complete`, `missing_fields`, `extracted_data`, `cfo_message`
-  - `extracted_data.category`는 Enum 값만 허용(아니면 누락으로 처리)
+  - `is_financial_data`, `is_complete`, `missing_fields`, `extracted_data`, `cfo_message`, (**선택 후보 단계**) `category_candidates`
+  - `extracted_data.category`: **등록 즉시** 툴로 이어지는 분기에서는 **Keeper Enum 문자열만** 유효(아니면 누락 처리). 채팅에서 **항목 칩 선택 후 저장**되는 경로는 클라에서 **표시 라벨 → Enum** 접기는 `normalizeKeeperAddLedgerCategory` 책임.
   - JSON 파싱 실패/형식 불량은 안전 fallback 후 되묻기 우선(무리한 자동등록 금지)
 
 ### 1-4. 계정 확인 UX 규칙
@@ -166,6 +170,7 @@
 - tool 스키마와 프롬프트 설명이 서로 모순 없는지
 - 지기 삭제/다건 처리에서 라우팅 오동작이 재발하지 않는지
 - 시트 구조화 파싱(수입/지출/계정/메모)과 대화 UX(질문 최소화)가 일치하는지
+- 채팅 표시 풀(38 지출·7 수입) 변경 시 **서버 `chat-assistant.js` 배열과 `vaultStore` 매핑**을 페어로 갱신했는지
 - 변경 후 최소 검증:
   - 지기: 추가/조회/다건삭제/location 필터
   - 지기: 계정 확정/모호계정 질문
