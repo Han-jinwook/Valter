@@ -590,7 +590,7 @@ export default function TransactionTable() {
                         {idx === 0 ? fmtDateCompact(group.date) : '\u00A0'}
                       </div>
                       <label
-                        className="-ml-0.5 shrink-0 inline-flex items-center cursor-pointer"
+                        className="-ml-0.5 shrink-0 inline-flex items-center cursor-pointer pr-0.5"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                       >
@@ -602,7 +602,7 @@ export default function TransactionTable() {
                           aria-label={`${tx.name || '거래'} 선택`}
                         />
                       </label>
-                      <div className="w-[70px] shrink-0 text-[10px] text-gray-500 truncate">
+                      <div className="ml-2 w-[64px] shrink-0 text-[10px] text-gray-500 truncate leading-tight">
                         {buildSourceLabel(tx)}
                       </div>
 
@@ -624,7 +624,7 @@ export default function TransactionTable() {
                         )}
                       </div>
 
-                      <div className="flex-[0.68] min-w-[80px] max-w-[170px] px-0.5">
+                      <div className="flex-1 min-w-[100px] max-w-[min(38vw,13rem)] px-1">
                         {isEditing(tx.id, 'userMemo') ? (
                           <InlineInput
                             value={draftValue}
@@ -635,7 +635,7 @@ export default function TransactionTable() {
                         ) : (
                           <p
                             onDoubleClick={() => beginEdit(tx.id, 'userMemo', tx.userMemo || '')}
-                            className="text-[11px] text-gray-700 cursor-text truncate"
+                            className="text-[13px] leading-snug text-gray-600 cursor-text truncate"
                           >
                             {tx.userMemo?.trim() ? tx.userMemo : '(메모 없음)'}
                           </p>
