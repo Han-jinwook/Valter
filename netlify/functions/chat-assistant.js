@@ -41,28 +41,126 @@ const ADD_LEDGER_ALL_CATEGORIES = [...ADD_LEDGER_EXPENSE_CATEGORIES, ...ADD_LEDG
 const EXPENSE_CATEGORY_SET = new Set(ADD_LEDGER_EXPENSE_CATEGORIES)
 const INCOME_CATEGORY_SET = new Set(ADD_LEDGER_INCOME_CATEGORIES)
 const GENERIC_CATEGORY_SET = new Set(['기타', '기타 지출', '기타 수입'])
-const COMMON_CATEGORY_CANDIDATES = [
-  '식비',
+/**
+ * 채팅 칩·후보 표시용 정본 풀 (리서치 2026: KR 가계부 UI 라벨, 통계·앱·카드 교차안)
+ * add_ledger_entry 저장 Enum과 다른 이름이 포함됨 → 클라 vaultStore 에서 매핑한다.
+ */
+const CHAT_DISPLAY_EXPENSE_POOL = [
+  '식재료/마트',
+  '외식',
   '카페/간식',
-  '생활용품',
-  '교통비',
-  '차량유지비',
-  '쇼핑',
-  '의료비',
-  '건강체육비',
-  '학원비',
-  '교육비',
-  '문화여가',
-  '구독료',
-  '세탁비',
-  '미용비',
-  '경조사',
+  '편의점',
+  '배달',
   '주거비',
-  '통신비',
+  '관리비',
   '공과금',
+  '통신',
+  '교통',
+  '온라인쇼핑',
+  '생활용품',
+  '병원',
+  '교육',
+  '패션/잡화',
+  '약국',
+  '대중교통',
+  '택시',
+  '주유',
+  '주차/통행',
+  '차량정비',
+  '문화/여가',
+  '영화/공연',
+  '운동/헬스',
+  '미용/뷰티',
+  '여행',
+  '숙박',
+  '술/담배',
+  '세탁',
+  '도서/학습',
+  '보험',
+  '구독',
   '세금',
-  '보험료',
+  '대출이자',
+  '경조사',
+  '반려동물',
+  '해외결제',
+  '멤버십',
 ]
+
+const CHAT_DISPLAY_INCOME_POOL = [
+  '급여',
+  '사업/부수입',
+  '이자',
+  '배당',
+  '지원금/연금',
+  '용돈/이전',
+  '환급/캐시백',
+]
+
+/** @deprecated 이전 단일 풀 호환명 — 채팅 후보 로직에서는 지출풀 순서 재사용 */
+const COMMON_CATEGORY_CANDIDATES = CHAT_DISPLAY_EXPENSE_POOL
+
+const CHAT_DISPLAY_EXPENSE_SET = new Set(CHAT_DISPLAY_EXPENSE_POOL)
+const CHAT_DISPLAY_INCOME_SET = new Set(CHAT_DISPLAY_INCOME_POOL)
+
+function inferChatPoolIsIncomeHint(userText, summary, memo) {
+  const blob = `${String(userText || '')} ${String(summary || '')} ${String(memo || '')}`.trim()
+  if (!blob) return false
+  return /(?:수입|입금|급여\s*통장|통장\s*입금|받았|입\s*금액|보너스|실수령|연금|용돈|송금\s*받|들어\s*왔)/.test(blob)
+}
+
+function normalizeChipLabelToChatPool(raw) {
+  const t = String(raw || '').trim()
+  if (!t) return null
+  if (CHAT_DISPLAY_EXPENSE_SET.has(t) || CHAT_DISPLAY_INCOME_SET.has(t)) return t
+  /** 과거 코드·저장형 Enum → 리서치 표준안 근처로 정규화 (칩 문자열만) */
+  const legacy = {
+    문화여가: '문화/여가',
+    식비: '외식',
+    카페간식: '카페/간식',
+    '카페/간식': '카페/간식',
+    교통비: '교통',
+    차량유지비: '차량정비',
+    의료비: '병원',
+    건강체육비: '운동/헬스',
+    학원비: '교육',
+    교육비: '교육',
+    쇼핑: '온라인쇼핑',
+    구독료: '구독',
+    세탁비: '세탁',
+    미용비: '미용/뷰티',
+    보험료: '보험',
+    통신비: '통신',
+    수입: '급여',
+    환급: '환급/캐시백',
+  }
+  if (legacy[t]) return legacy[t]
+  /** Keeper 저장 Enum 단일 라벨 (히스토리에서 자주 재사용). 칩표시용만 매핑, 애매한 건 매핑 생략. */
+  const fromKeeperEnum =
+    {
+      식비: '외식',
+      '교통/차량': '교통',
+      '쇼핑/뷰티': '패션/잡화',
+      '주거/통신': '주거비',
+      '문화/여가': '문화/여가',
+      '건강/병원': '병원',
+      '이자/금융수수료': '대출이자',
+      급여: '급여',
+      부수입: '사업/부수입',
+      '금융 수입': '배당',
+      '기타 수입': '용돈/이전',
+    }[t] ?? null
+  if (fromKeeperEnum && (CHAT_DISPLAY_EXPENSE_SET.has(fromKeeperEnum) || CHAT_DISPLAY_INCOME_SET.has(fromKeeperEnum)))
+    return fromKeeperEnum
+  return null
+}
+
+function poolsForStructuredPrompt() {
+  return `[지출 항목 후보 풀 — 지출 거래만 이 목록에서 2개]
+${CHAT_DISPLAY_EXPENSE_POOL.join(', ')}
+[수입 항목 후보 풀 — 명백히 수입(입금·급여·이자 등) 거래만 이 목록에서 2개]
+${CHAT_DISPLAY_INCOME_POOL.join(', ')}
+[선택 규칙] 금액이나 문맥상 지출이면 지출 풀만, 명백한 수입이면 수입 풀만 쓸 것. 불명확하면 지출 가정 후 지출 풀만 쓸 것. 모든 문자열은 위 풀에 있는 레이블 그대로(철자·슬래시 동일).`
+}
 
 function addLedgerCategoryEnumBlock() {
   return `【add_ledger_entry — 카테고리 고정 Enum(반드시 이 명칭만)】
@@ -117,7 +215,8 @@ ${ADD_LEDGER_ALL_CATEGORIES.join(', ')}
 - 확신이 없으면 "기타 지출/기타 수입"으로 때우지 말고 category=null, missing_fields에 "category"를 넣어라. 앱이 항목 후보 칩 2개와 직접 입력창을 보여준다.
 - category=null인 경우 category_candidates는 절대 빈 배열이면 안 된다. 반드시 중복 없는 후보 2개를 채워라.
 - category_candidates는 "기타", "기타 지출", "기타 수입"을 포함하지 않는다.
-- 범용 후보 풀: ${COMMON_CATEGORY_CANDIDATES.join(', ')}
+- 범용 후보 풀(반드시 아래 목록 문자열만 사용, 새로 이름을 만들지 말 것):
+${poolsForStructuredPrompt()}
 
 [계정(account) 처리]
 - 유저가 결제수단/입금계좌를 말하지 않으면 account=null
@@ -159,7 +258,7 @@ function parseJsonObjectStrict(text) {
   }
 }
 
-function normalizeStructuredResult(raw, today, existingCategories = []) {
+function normalizeStructuredResult(raw, today, existingCategories = [], latestUserText = '') {
   const fallback = {
     is_financial_data: false,
     is_complete: false,
@@ -195,12 +294,27 @@ function normalizeStructuredResult(raw, today, existingCategories = []) {
   const normalizedAmount = Number.isFinite(amount) ? amount : 0
   const normalizedSummary = summaryText || null
   const normalizedAccount = accountText || null
-  const categoryCandidates = Array.isArray(raw.category_candidates)
-    ? raw.category_candidates
-        .map((x) => String(x || '').trim())
-        .filter((x) => x && !GENERIC_CATEGORY_SET.has(x))
-        .slice(0, 2)
-    : []
+  const inferredIncomeTurn = inferChatPoolIsIncomeHint(latestUserText, summaryText, memoText)
+  const poolGate = inferredIncomeTurn
+    ? (c) => CHAT_DISPLAY_INCOME_SET.has(c)
+    : (c) => CHAT_DISPLAY_EXPENSE_SET.has(c)
+  /** 모델·히스토리 레이블 → 리서치 칩 표준안으로 정규화 후 풀 일치 건만 유지 */
+  const categoryCandidates = (() => {
+    const xs = Array.isArray(raw.category_candidates) ? raw.category_candidates : []
+    const normalized = xs
+      .map((x) => normalizeChipLabelToChatPool(String(x || '').trim()))
+      .filter((c) => c && !GENERIC_CATEGORY_SET.has(c))
+    const out = []
+    const seen = new Set()
+    for (const c of normalized) {
+      if (!poolGate(c)) continue
+      if (seen.has(c)) continue
+      out.push(c)
+      seen.add(c)
+      if (out.length >= 2) break
+    }
+    return out
+  })()
 
   const missing = []
   if (!knownCategory) missing.push('category')
@@ -297,7 +411,7 @@ async function runStructuredEntryParser(apiKey, userText, dbContext, recentMessa
   const payload = await res.json()
   const content = payload?.choices?.[0]?.message?.content
   const parsed = parseJsonObjectStrict(content)
-  return normalizeStructuredResult(parsed, today, categories)
+  return normalizeStructuredResult(parsed, today, categories, userText)
 }
 
 /**
@@ -306,22 +420,35 @@ async function runStructuredEntryParser(apiKey, userText, dbContext, recentMessa
  * 2순위: LLM 단발 후보 호출 (범용 후보 풀 기반, 키워드 룰 없음)
  * 3순위: 범용 후보 풀 앞에서 순서대로 채움
  */
-async function ensureCategoryCandidates(apiKey, structured, historyHints = []) {
-  let candidates = Array.isArray(structured.category_candidates) ? [...structured.category_candidates] : []
-  if (candidates.length >= 2) return candidates.slice(0, 2)
-
+async function ensureCategoryCandidates(apiKey, structured, historyHints = [], latestUserText = '') {
   const summary = String(structured.extracted_data?.summary || '').trim()
   const memo = String(structured.extracted_data?.memo || '').trim()
+  const incomeTurn = inferChatPoolIsIncomeHint(latestUserText, summary, memo)
+  const activePool = incomeTurn ? CHAT_DISPLAY_INCOME_POOL : CHAT_DISPLAY_EXPENSE_POOL
+  const poolSet = incomeTurn ? CHAT_DISPLAY_INCOME_SET : CHAT_DISPLAY_EXPENSE_SET
 
-  // 1. JS 히스토리 매칭 — 추가 API 호출 없음
+  let candidates = Array.isArray(structured.category_candidates) ? [...structured.category_candidates] : []
+  candidates = candidates.map((x) => normalizeChipLabelToChatPool(String(x || '').trim())).filter((c) => c && poolSet.has(c))
+
+  const addOption = (c) => {
+    const clean = String(c || '').trim()
+    if (!clean || GENERIC_CATEGORY_SET.has(clean) || !poolSet.has(clean)) return
+    if (!candidates.includes(clean)) {
+      candidates.push(clean)
+    }
+  }
+  if (candidates.length >= 2) return candidates.slice(0, 2)
+
+  // 1. JS 히스토리 매칭 — 표준안으로 치환 후 동일 로직
   if (historyHints.length > 0) {
     const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '')
     const sSlug = slug(summary)
     const mSlug = slug(memo)
     const scores = new Map()
     for (const h of historyHints) {
-      const cat = String(h.category || '').trim()
-      if (!cat || GENERIC_CATEGORY_SET.has(cat)) continue
+      const rawCat = String(h.category || '').trim()
+      const cat = normalizeChipLabelToChatPool(rawCat)
+      if (!cat || GENERIC_CATEGORY_SET.has(cat) || !poolSet.has(cat)) continue
       const hSlug = slug(h.summary || '')
       const hmSlug = slug(h.memo || '')
       let score = 0
@@ -353,7 +480,7 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = []) {
           messages: [
             {
               role: 'system',
-              content: `항목 후보 선택 전용. 거래를 보고 아래 후보 풀에서 가장 적합한 항목 2개를 골라 {"candidates":["항목1","항목2"]} 형태로만 반환. JSON 외 텍스트 없음.\n후보 풀: ${COMMON_CATEGORY_CANDIDATES.join(', ')}`,
+              content: `항목 후보 선택 전용. 거래 텍스트를 보고 (${incomeTurn ? '수입' : '지출'} 풀만) 다음 목록 중에서 가장 적합한 2개를 정확한 철자로 골라 {"candidates":["항목1","항목2"]} 만 반환. 목록 외 문자열 금지.\n허용 목록:\n${activePool.join(', ')}`,
             },
             { role: 'user', content: `거래: ${summary}${memo ? ` / ${memo}` : ''}` },
           ],
@@ -365,11 +492,7 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = []) {
         const parsed = parseJsonObjectStrict(content)
         const arr = Array.isArray(parsed?.candidates) ? parsed.candidates : []
         for (const x of arr) {
-          const clean = String(x || '').trim()
-          if (clean && !GENERIC_CATEGORY_SET.has(clean) && !candidates.includes(clean)) {
-            candidates.push(clean)
-            if (candidates.length >= 2) break
-          }
+          addOption(normalizeChipLabelToChatPool(String(x || '').trim()) || '')
         }
       }
     } catch {
@@ -377,12 +500,10 @@ async function ensureCategoryCandidates(apiKey, structured, historyHints = []) {
     }
   }
 
-  // 3. 범용 후보 풀 앞에서 순서대로 채움 — 키워드 룰 없음
-  for (const c of COMMON_CATEGORY_CANDIDATES) {
-    if (!candidates.includes(c)) {
-      candidates.push(c)
-      if (candidates.length >= 2) break
-    }
+  // 3. 순서 폴백 — Tier A 순서 근처를 반영해 리스트 앞쪽 우선 채움
+  for (const c of activePool) {
+    addOption(c)
+    if (candidates.length >= 2) break
   }
 
   return candidates.slice(0, 2)
@@ -1089,11 +1210,22 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
             d.date
           if (onlyCategoryMissing) {
             const historyHintsForEnsure = Array.isArray(dbContext?.categoryHistoryHints) ? dbContext.categoryHistoryHints : []
-            const guaranteedCandidates = await ensureCategoryCandidates(apiKey, structured, historyHintsForEnsure)
+            const guaranteedCandidates = await ensureCategoryCandidates(
+              apiKey,
+              structured,
+              historyHintsForEnsure,
+              latestUserText,
+            )
             return json(200, {
               type: 'category_confirm',
               entry: {
-                type: inferTypeFromCategory(d.category),
+                type: (() => {
+                  const c = d.category == null ? '' : String(d.category).trim()
+                  if (c && (EXPENSE_CATEGORY_SET.has(c) || INCOME_CATEGORY_SET.has(c))) {
+                    return inferTypeFromCategory(c)
+                  }
+                  return inferChatPoolIsIncomeHint(latestUserText, d.summary, d.memo) ? 'INCOME' : 'EXPENSE'
+                })(),
                 date: d.date,
                 amount: Number(d.amount),
                 summary: d.summary,

@@ -301,14 +301,86 @@ const KEEPER_LEDGER_INCOME_CATEGORIES = ['급여', '부수입', '금융 수입',
 const KEEPER_EXPENSE_SET = new Set<string>(KEEPER_LEDGER_EXPENSE_CATEGORIES)
 const KEEPER_INCOME_SET = new Set<string>(KEEPER_LEDGER_INCOME_CATEGORIES)
 
+/**
+ * 리서치 표준 채팅 표시 레이블 → 지기 원장 저장용 Enum 매핑
+ * (@see chat-assistant.js CHAT_DISPLAY_*_POOL 과 동일한 키)
+ */
+const CHAT_DISPLAY_TO_KEEPER_EXPENSE: Record<string, string> = {
+  '식재료/마트': '식비',
+  외식: '식비',
+  '카페/간식': '식비',
+  편의점: '식비',
+  배달: '식비',
+  '술/담배': '식비',
+  주거비: '주거/통신',
+  관리비: '주거/통신',
+  공과금: '주거/통신',
+  통신: '주거/통신',
+  교통: '교통/차량',
+  대중교통: '교통/차량',
+  택시: '교통/차량',
+  주유: '교통/차량',
+  '주차/통행': '교통/차량',
+  차량정비: '교통/차량',
+  온라인쇼핑: '쇼핑/뷰티',
+  생활용품: '쇼핑/뷰티',
+  '패션/잡화': '쇼핑/뷰티',
+  세탁: '쇼핑/뷰티',
+  '도서/학습': '쇼핑/뷰티',
+  멤버십: '쇼핑/뷰티',
+  해외결제: '쇼핑/뷰티',
+  '미용/뷰티': '쇼핑/뷰티',
+  병원: '건강/병원',
+  약국: '건강/병원',
+  '운동/헬스': '건강/병원',
+  교육: '문화/여가',
+  구독: '문화/여가',
+  '문화/여가': '문화/여가',
+  '영화/공연': '문화/여가',
+  여행: '문화/여가',
+  숙박: '문화/여가',
+  보험: '기타 지출',
+  세금: '기타 지출',
+  경조사: '기타 지출',
+  반려동물: '기타 지출',
+  대출이자: '이자/금융수수료',
+}
+
+/** 수입 채팅 라벨 7종 */
+const CHAT_DISPLAY_TO_KEEPER_INCOME: Record<string, string> = {
+  급여: '급여',
+  '사업/부수입': '부수입',
+  이자: '금융 수입',
+  배당: '금융 수입',
+  '지원금/연금': '기타 수입',
+  '용돈/이전': '기타 수입',
+  '환급/캐시백': '기타 수입',
+}
+
 function normalizeKeeperAddLedgerCategory(
   type: 'EXPENSE' | 'INCOME',
   category: string,
 ): string {
   const raw = String(category || '').trim()
-  if (raw) return raw
+  if (!raw) {
+    return type === 'INCOME' ? '기타 수입' : '기타 지출'
+  }
   const allow = type === 'INCOME' ? KEEPER_INCOME_SET : KEEPER_EXPENSE_SET
-  if (allow.has(raw)) return raw
+  if (allow.has(raw)) {
+    return raw
+  }
+  if (type === 'INCOME') {
+    const fromChat = CHAT_DISPLAY_TO_KEEPER_INCOME[raw]
+    if (fromChat && KEEPER_INCOME_SET.has(fromChat)) {
+      return fromChat
+    }
+  } else {
+    const fromChat = CHAT_DISPLAY_TO_KEEPER_EXPENSE[raw]
+    if (fromChat && KEEPER_EXPENSE_SET.has(fromChat)) {
+      return fromChat
+    }
+  }
+  /** 직접 입력 등 Enum 밖 문자열 — 보수적으로 폴백 */
   return type === 'INCOME' ? '기타 수입' : '기타 지출'
 }
 
