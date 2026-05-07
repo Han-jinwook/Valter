@@ -41,6 +41,18 @@ function formatWonAbs(n) {
   return `₩${Math.abs(Number(n) || 0).toLocaleString('ko-KR')}`
 }
 
+/** 원장 tx → 질문 칩 없이 요약할 때 사용(날짜·적요·금액) */
+function formatCompactLedgerFactLineFromTx(tx) {
+  if (!tx) return ''
+  const parts = [
+    String(tx.date || '').replace(/\./g, '-'),
+    String(tx.name || tx.merchant || '').trim(),
+    String(tx.userMemo || '').trim(),
+    tx.amount != null && tx.amount !== '' ? formatWonAbs(tx.amount) : '',
+  ].filter((x) => x !== '' && x != null)
+  return parts.length ? `${parts.join(', ')}.` : ''
+}
+
 function normalizeSearchText(value) {
   return String(value || '')
     .normalize('NFKC')
@@ -483,6 +495,7 @@ export default function AIChatPanel() {
     acknowledgeAlert,
     resolveLedgerReview,
     addChatMessage,
+    updateChatMessage,
     updateTransactionInline,
     deleteLine,
     addLedgerEntry,
@@ -986,7 +999,7 @@ export default function AIChatPanel() {
   )
 
   const handlePendingEntryCategory = useCallback(
-    async (entry, category, account) => {
+    async (entry, category, account, pendingMessageId) => {
       const pickedCategory = String(category || '').trim()
       const pickedAccount = String(account || '').trim()
       if (!pickedCategory || !entry) return
@@ -1019,11 +1032,21 @@ export default function AIChatPanel() {
           options: [{ label: out.summary.category, category: out.summary.category }],
           accountOptions: buildAccountOptionsForChat(transactions),
         })
+      } else if (pendingMessageId != null) {
+        updateChatMessage(pendingMessageId, {
+          resolved: true,
+          pendingFooterLine: `${pickedCategory} · ${pickedAccount}`,
+        })
+        conversationRef.current.push({
+          role: 'user',
+          content: `[기록 확정] 항목 ${pickedCategory}, 계정 ${pickedAccount}`,
+        })
+        conversationRef.current.push({ role: 'assistant', content: factLine })
       } else {
         addChatMessage({ role: 'ai', type: 'text', text: factLine })
       }
     },
-    [addChatMessage, addLedgerEntry, clearAiFilter, transactions],
+    [addChatMessage, updateChatMessage, addLedgerEntry, clearAiFilter, transactions],
   )
 
   // ─── AI 채팅 멀티턴 루프 ───────────────────────────────────────────────────
@@ -1591,26 +1614,44 @@ function ChatBubble({
 
   if (msg.type === 'pending_entry_category') {
     const pendingEntry = msg.pendingEntry || {}
-    const categoryOptions = buildCategoryOptionsForPendingEntry(pendingEntry, transactions)
-    const pendingCategory = selectedCategory.trim() || customCategory.trim()
-    const selectSyncedAccount = accountChoicesSet.has(accountInput.trim()) ? accountInput.trim() : ''
-    const canSubmitPendingEntry = Boolean(pendingCategory && accountInput.trim())
     const fact = [
       String(pendingEntry.date || '').replace(/\./g, '-'),
       String(pendingEntry.summary || '').trim(),
       String(pendingEntry.detail_memo || '').trim(),
       pendingEntry.amount ? formatWonAbs(pendingEntry.amount) : '',
     ].filter(Boolean).join(', ')
-    return (
-      <div className="flex flex-col gap-1 max-w-[94%]">
-        <div className="flex items-end gap-1.5">
-          <div className={aiSpotlightCn(spotlight, 'bg-surface-container-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed')}>
-            <p className="font-semibold">{fact}.</p>
-            <p className="mt-1 text-on-surface-variant">항목을 선택하거나 직접 입력해 주세요.</p>
+
+    if (msg.resolved && msg.pendingFooterLine) {
+      return (
+        <div className="flex items-end gap-1.5 max-w-[94%]">
+          <div
+            className={aiSpotlightCn(
+              spotlight,
+              'bg-surface-container-low text-on-surface px-3 py-2 rounded-2xl rounded-tl-none leading-tight',
+            )}
+          >
+            <p className="font-semibold text-sm">{fact}.</p>
+            <p className="mt-0.5 text-xs font-semibold text-primary">{msg.pendingFooterLine}</p>
           </div>
           <TimeStamp time={msg.time} dateLabel="" />
         </div>
-        <div className="flex flex-wrap gap-2 mt-1 ml-1">
+      )
+    }
+
+    const categoryOptions = buildCategoryOptionsForPendingEntry(pendingEntry, transactions)
+    const pendingCategory = selectedCategory.trim() || customCategory.trim()
+    const selectSyncedAccount = accountChoicesSet.has(accountInput.trim()) ? accountInput.trim() : ''
+    const canSubmitPendingEntry = Boolean(pendingCategory && accountInput.trim())
+    return (
+      <div className="flex flex-col gap-1 max-w-[94%]">
+        <div className="flex items-end gap-1.5">
+          <div className={aiSpotlightCn(spotlight, 'bg-surface-container-low text-on-surface px-3 py-2 rounded-2xl rounded-tl-none leading-relaxed')}>
+            <p className="font-semibold text-sm">{fact}.</p>
+            <p className="mt-0.5 text-on-surface-variant text-[11px] leading-snug">항목·계정 선택 후 확인</p>
+          </div>
+          <TimeStamp time={msg.time} dateLabel="" />
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-0.5 ml-1">
           {categoryOptions.map((opt) => (
             <button
               key={`${opt.category}-${opt.label}`}
@@ -1637,14 +1678,14 @@ function ChatBubble({
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && canSubmitPendingEntry) {
-                onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim())
+                onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim(), msg.id)
               }
             }}
             placeholder="항목 직접 입력"
             className="min-w-[9rem] flex-1 px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
-        <div className="mt-2 ml-1 grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
+        <div className="mt-1 ml-1 grid w-full min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
           <label htmlFor={`pending-acct-pick-${msg.id}`} className="sr-only">
             계정 선택
           </label>
@@ -1667,7 +1708,7 @@ function ChatBubble({
             onChange={(e) => setAccountInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && canSubmitPendingEntry) {
-                onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim())
+                onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim(), msg.id)
               }
             }}
             placeholder="새 계정명 입력"
@@ -1677,7 +1718,7 @@ function ChatBubble({
           <button
             type="button"
             disabled={!canSubmitPendingEntry}
-            onClick={() => onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim())}
+            onClick={() => onPendingEntryCategory?.(pendingEntry, pendingCategory, accountInput.trim(), msg.id)}
             className="w-full px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-bold disabled:opacity-50 sm:w-auto sm:min-w-[3.5rem]"
           >
             확인
@@ -1689,6 +1730,30 @@ function ChatBubble({
 
   if (msg.type === 'account_confirm') {
     const isResolved = msg.resolved || (tx?.status === 'CONFIRMED' && Boolean(tx?.account))
+    const footerResolved =
+      msg.pendingFooterLine?.trim() ||
+      (tx?.category && tx?.account
+        ? `${String(tx.category).trim()} · ${String(tx.account).trim()}`
+        : '')
+
+    if (isResolved && footerResolved) {
+      const factCompact = formatCompactLedgerFactLineFromTx(tx)
+      return (
+        <div className="flex items-end gap-1.5 max-w-[94%]">
+          <div
+            className={aiSpotlightCn(
+              spotlight,
+              'bg-surface-container-low text-on-surface px-3 py-2 rounded-2xl rounded-tl-none leading-tight',
+            )}
+          >
+            {factCompact ? <p className="font-semibold text-sm">{factCompact}</p> : null}
+            <p className={`text-xs font-semibold text-primary ${factCompact ? 'mt-0.5' : ''}`}>{footerResolved}</p>
+          </div>
+          <TimeStamp time={msg.time} dateLabel="" />
+        </div>
+      )
+    }
+
     const categoryOptions = Array.isArray(msg.options) ? msg.options : []
     const pendingCategoryEntry = {
       summary: tx?.name || tx?.merchant || '',
@@ -1714,20 +1779,16 @@ function ChatBubble({
     return (
       <div className="flex w-full max-w-[94%] flex-col gap-1 items-stretch">
         <div className="flex items-end gap-1.5">
-        <div className={aiSpotlightCn(spotlight, 'bg-surface-container-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-none leading-relaxed')}>
+        <div className={aiSpotlightCn(spotlight, 'bg-surface-container-low text-on-surface px-3 py-2 rounded-2xl rounded-tl-none leading-relaxed')}>
           {msg.text}
         </div>
         <TimeStamp time={msg.time} dateLabel="" />
         </div>
-        {!isResolved ? (
-          <>
-            <div className="ml-1 mt-2 text-[11px] leading-tight text-on-surface-variant">
+            <div className="ml-1 mt-1 text-[11px] leading-tight text-on-surface-variant">
               <span className="font-semibold">항목</span>{' '}
-              <span className="text-outline/80 font-normal">
-                (추천 2개 또는 직접 입력)
-              </span>
+              <span className="text-outline/80 font-normal">(추천 또는 직접 입력)</span>
             </div>
-            <div className="mt-1 ml-1 grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[auto_auto_minmax(0,1fr)] sm:items-stretch">
+            <div className="mt-1 ml-1 grid w-full min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-[auto_auto_minmax(0,1fr)] sm:items-stretch">
               {mergedCategoryOptions.map((opt) => (
                 <button
                   key={`${opt.category}-${opt.label}`}
@@ -1759,7 +1820,7 @@ function ChatBubble({
                 className="min-w-[8rem] px-3 py-1.5 text-xs rounded-lg border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <div className="mt-3 ml-1 grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
+            <div className="mt-2 ml-1 grid w-full min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
               <label htmlFor={`acct-pick-${msg.id}`} className="sr-only">
                 목록에서 계정 선택
               </label>
@@ -1798,13 +1859,6 @@ function ChatBubble({
                 확인
               </button>
             </div>
-          </>
-        ) : (
-          <div className="ml-1 mt-1 flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
-            <span className="material-symbols-outlined text-sm">check_circle</span>
-            반영 완료
-          </div>
-        )}
       </div>
     )
   }

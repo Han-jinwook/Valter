@@ -36,6 +36,7 @@ type ChatType =
   | 'text'
   | 'confirm'
   | 'account_confirm'
+  | 'pending_entry_category'
   | 'processing'
   | 'result'
   | 'alert'
@@ -69,6 +70,17 @@ export type ChatMessage = {
   ledgerDeleteConfirm?: {
     items: { txId: string; date: string; name: string; amount: number; category: string }[]
   }
+  /** category_confirm 이후 같은 말풍선에만 쓰는 페이로드(지기방) */
+  pendingEntry?: {
+    type?: string
+    date?: string
+    amount?: number
+    summary?: string
+    detail_memo?: string
+    suggestedCategories?: string[]
+  }
+  /** 확정 후 질문 칩 대신 같은 블록 아래 한 줄로만 표시 (예: 생활용품 · 국민카드) */
+  pendingFooterLine?: string
 }
 
 type LedgerDecision = {
@@ -264,6 +276,7 @@ type VaultState = {
     items: DocumentParseResult[]
   ) => Promise<IngestDocumentBatchResult>
   addChatMessage: (msg: Omit<Partial<ChatMessage>, 'id' | 'time'> & { text: string }) => void
+  updateChatMessage: (id: number, patch: Partial<ChatMessage>) => void
   addAssetChatMessage: (msg: Omit<Partial<ChatMessage>, 'id' | 'time'> & { text: string }) => void
   addBudgetChatMessage: (msg: Omit<Partial<ChatMessage>, 'id' | 'time'> & { text: string }) => void
   upsertBudgetGoal: (input: {
@@ -1143,7 +1156,13 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       transactions: s.transactions.map((t) => (t.id === txId ? next : t)),
       messages: [
         ...s.messages.map((m) =>
-          m.type === 'account_confirm' && m.txId === Number(txId) ? { ...m, resolved: true } : m
+          m.type === 'account_confirm' && m.txId === Number(txId)
+            ? {
+                ...m,
+                resolved: true,
+                pendingFooterLine: `${String(tx.category || '').trim() || '항목'} · ${nextAccount}`,
+              }
+            : m
         ),
       ],
     }))
@@ -1171,7 +1190,11 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         : [txId, ...s.reviewPinnedTxIds],
       messages: s.messages.map((m) =>
         (m.type === 'confirm' || m.type === 'account_confirm') && m.txId === Number(txId)
-          ? { ...m, resolved: true }
+          ? {
+              ...m,
+              resolved: true,
+              pendingFooterLine: `${nextCategory} · ${nextAccount}`,
+            }
           : m
       ),
     }))
@@ -1426,6 +1449,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           createdAt: new Date().toISOString(),
         } as ChatMessage,
       ],
+    }))
+  },
+
+  updateChatMessage: (id, patch) => {
+    set((s) => ({
+      messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     }))
   },
 
