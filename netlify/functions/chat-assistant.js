@@ -1264,9 +1264,11 @@ query_ledger 호출 시 위에 있는 **계정·(기존)카테고리**를 검색
             d.date
           if (onlyCategoryMissing) {
             const historyHintsForEnsure = Array.isArray(dbContext?.categoryHistoryHints) ? dbContext.categoryHistoryHints : []
+            /** 구조화 1차가 풀 안 2개를 채워도 오추천일 수 있어, 보정은 히스토리·의미 LLM 기준으로 다시 채운다. */
+            const structuredForEnsure = { ...structured, category_candidates: [] }
             const guaranteedCandidates = await ensureCategoryCandidates(
               apiKey,
-              structured,
+              structuredForEnsure,
               historyHintsForEnsure,
               latestUserText,
             )
